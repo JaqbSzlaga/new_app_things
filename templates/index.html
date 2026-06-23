@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="pl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Domowa spiżarnia</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="hero">
+    <div>
+      <p class="eyebrow">Wspólna lista zakupów</p>
+      <h1>Domowa spiżarnia</h1>
+      <p>Dodawaj domy, produkty, zdjęcia i ilości. Gdy licznik spadnie do zera, aplikacja zapyta, czy dorzucić produkt do kupienia.</p>
+    </div>
+    <button class="primary" onclick="openDialog('productDialog')">+ Dodaj produkt</button>
+  </header>
+
+  <main class="layout">
+    <section class="panel wide">
+      <div class="section-head">
+        <div>
+          <h2>Produkty w domach</h2>
+          <p>Każdy produkt zostaje na liście nawet przy 0 sztukach.</p>
+        </div>
+        <button onclick="openDialog('homeDialog')">+ Dodaj dom</button>
+      </div>
+      <div id="homes" class="homes"></div>
+    </section>
+
+    <aside class="panel shopping-panel">
+      <div class="section-head">
+        <div>
+          <h2>Lista zakupów</h2>
+          <p>Wspólna dla wszystkich domów.</p>
+        </div>
+        <button class="ghost" onclick="clearChecked()">Usuń kupione</button>
+      </div>
+      <div id="shopping" class="shopping"></div>
+    </aside>
+  </main>
+
+  <dialog id="homeDialog">
+    <form method="post" action="/api/homes" class="dialog-card">
+      <h3>Dodaj dom</h3>
+      <input name="name" placeholder="np. Mieszkanie, Dom rodzinny" required>
+      <div class="dialog-actions">
+        <button type="button" onclick="closeDialog('homeDialog')">Anuluj</button>
+        <button class="primary" type="submit">Dodaj</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="productDialog">
+    <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card" id="productForm">
+      <h3>Dodaj produkt</h3>
+      <input name="name" placeholder="np. Mleko, Ryż, Makaron" required>
+      <label class="file-label">Zdjęcie produktu
+        <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif">
+      </label>
+      <div id="initialQuantities" class="initial-qty"></div>
+      <div class="dialog-actions">
+        <button type="button" onclick="closeDialog('productDialog')">Anuluj</button>
+        <button class="primary" type="submit">Dodaj produkt</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script>
+    let state = { homes: [], products: [], inventory: [], shopping: [] };
+
+    const imgUrl = (filename) => filename ? `/uploads/${filename}` : '';
+
+    function openDialog(id) {
+      if (id === 'productDialog') buildInitialQuantities();
+      document.getElementById(id).showModal();
+    }
+    function closeDialog(id) { document.getElementById(id).close(); }
+
+    async function loadState() {
+      const res = await fetch('/api/state');
+      state = await res.json();
+      renderHomes();
+      renderShopping();
+    }
+
+    function getQty(homeId, productId) {
+      const item = state.inventory.find(i => i.home_id === homeId && i.product_id === productId);
+      return item ? item.quantity : 0;
+    }
+
+    function buildInitialQuantities() {
+      const box = document.getElementById('initialQuantities');
+      box.innerHTML = '<p class="mini-title">Ilość początkowa</p>' + state.homes.map(home => `
+        <label>${home.name}<input type="number" min="0" value="0" name="qty_home_${home.id}"></label>
+      `).join('');
+    }
+
+    function productCard(home, product) {
+      const qty = getQty(home.id, product.id);
+      const image = product.image_filename
+        ? `<img src="${imgUrl(product.image_filename)}" alt="${product.name}">`
+        : `<div class="placeholder">${product.name.slice(0, 1).toUpperCase()}</div>`;
+      return `
+        <article class="product-card ${qty === 0 ? 'empty' : ''}">
+          <div class="product-image">${image}</div>
+          <div class="product-info">
+            <strong>${product.name}</strong>
+            <span>${qty === 0 ? 'brak w domu' : 'na stanie'}</span>
+          </div>
+          <div class="counter">
+            <button onclick="changeQty(${home.id}, ${product.id}, -1, ${qty})">−</button>
+            <b>${qty}</b>
+            <button onclick="changeQty(${home.id}, ${product.id}, 1, ${qty})">+</button>
+          </div>
+          <button class="danger-text" onclick="deleteProduct(${product.id}, '${product.name.replaceAll("'", "\\'")}')">Usuń</button>
+        </article>`;
+    }
+
+    function renderHomes() {
+      const root = document.getElementById('homes');
+      if (!state.homes.length) {
+        root.innerHTML = '<p class="empty-note">Dodaj pierwszy dom.</p>';
+        return;
+      }
+      root.innerHTML = state.homes.map(home => `
+        <section class="home-block">
+          <div class="home-title">
+            <h3>${home.name}</h3>
+            <button class="danger-text" onclick="deleteHome(${home.id}, '${home.name.replaceAll("'", "\\'")}')">Usuń dom</button>
+          </div>
+          <div class="products-grid">
+            ${state.products.length ? state.products.map(p => productCard(home, p)).join('') : '<p class="empty-note">Dodaj pierwszy produkt.</p>'}
+          </div>
+        </section>
+      `).join('');
+    }
+
+    function renderShopping() {
+      const root = document.getElementById('shopping');
+      if (!state.shopping.length) {
+        root.innerHTML = '<p class="empty-note">Lista zakupów jest pusta.</p>';
+        return;
+      }
+      root.innerHTML = state.shopping.map(item => `
+        <article class="shopping-item ${item.checked ? 'checked' : ''}">
+          <button class="check" onclick="toggleShopping(${item.id})">${item.checked ? '✓' : ''}</button>
+          <div class="shopping-img">${item.image_filename ? `<img src="${imgUrl(item.image_filename)}" alt="${item.name}">` : item.name.slice(0,1).toUpperCase()}</div>
+          <div class="grow"><strong>${item.name}</strong><span>do kupienia</span></div>
+          <div class="mini-counter">
+            <button onclick="changeShopping(${item.id}, -1)">−</button><b>${item.wanted_quantity}</b><button onclick="changeShopping(${item.id}, 1)">+</button>
+          </div>
+          <button class="danger-text" onclick="deleteShopping(${item.id})">Usuń</button>
+        </article>
+      `).join('');
+    }
+
+    async function changeQty(homeId, productId, delta, currentQty) {
+      let addToShopping = false;
+      if (delta < 0 && currentQty === 1) {
+        addToShopping = confirm('To będzie 0. Dodać ten produkt do listy zakupów?');
+      }
+      await fetch('/api/inventory/change', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ home_id: homeId, product_id: productId, delta, add_to_shopping: addToShopping })
+      });
+      await loadState();
+    }
+
+    async function deleteProduct(productId, name) {
+      if (!confirm(`Usunąć produkt „${name}” ze wszystkich domów i z listy zakupów?`)) return;
+      await fetch(`/api/products/${productId}/delete`, { method: 'POST' });
+      await loadState();
+    }
+
+    async function deleteHome(homeId, name) {
+      if (!confirm(`Usunąć dom „${name}”? Produkty zostaną, znikną tylko ilości dla tego domu.`)) return;
+      await fetch(`/api/homes/${homeId}/delete`, { method: 'POST' });
+      await loadState();
+    }
+
+    async function changeShopping(id, delta) {
+      await fetch(`/api/shopping/${id}/change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delta }) });
+      await loadState();
+    }
+    async function toggleShopping(id) { await fetch(`/api/shopping/${id}/toggle`, { method: 'POST' }); await loadState(); }
+    async function deleteShopping(id) { await fetch(`/api/shopping/${id}/delete`, { method: 'POST' }); await loadState(); }
+    async function clearChecked() { await fetch('/api/shopping/clear_checked', { method: 'POST' }); await loadState(); }
+
+    loadState();
+    setInterval(loadState, 5000);
+  </script>
+</body>
+</html>

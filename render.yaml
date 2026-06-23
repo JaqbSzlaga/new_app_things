@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: domowa-spizarnia
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: domowa-spizarnia-data
+      mountPath: /var/data
+      sizeGB: 1
