@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=6">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=7">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -88,8 +88,13 @@
 
   <dialog id="productDialog">
     <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
-      <h3>Dodaj produkt</h3>
-      <p>Wybierz jeden lub kilka gotowych produktów. Możesz też wpisać własny produkt i dodać zdjęcie.</p>
+      <div class="product-dialog-head">
+        <div>
+          <h3>Dodaj produkty</h3>
+          <p>Zaznacz kilka gotowych produktów naraz albo wpisz własny produkt.</p>
+        </div>
+        <button type="button" class="close-x" onclick="closeDialog('productDialog')" aria-label="Zamknij">✕</button>
+      </div>
 
       <input name="name" id="productName" placeholder="Własny produkt, np. mleko owsiane">
       <input type="hidden" name="preset_image_url" id="presetImageUrl">
@@ -98,6 +103,10 @@
       <div>
         <p class="mini-title">Gotowe produkty</p>
         <div id="presetCategories" class="category-pills"></div>
+        <label class="preset-search">
+          <span>⌕</span>
+          <input id="presetSearchBox" type="text" placeholder="Szukaj np. mleko, krakersy..." oninput="buildPresetGrid()">
+        </label>
         <div id="presetGrid" class="preset-grid compact"></div>
         <div class="selected-info" id="selectedInfo">Nie wybrano gotowych produktów.</div>
       </div>
@@ -132,6 +141,7 @@
         document.getElementById('productForm').reset();
         document.getElementById('presetImageUrl').value = '';
         document.getElementById('selectedPresets').value = '[]';
+        const presetSearch = document.getElementById('presetSearchBox'); if (presetSearch) presetSearch.value = '';
         updateSelectedInfo();
         buildPresetGrid();
         buildInitialQuantities();
@@ -199,16 +209,23 @@
       catBox.innerHTML = cats.map(cat => `
         <button type="button" class="category-pill ${activePresetCategory === cat ? 'active' : ''}" onclick="selectPresetCategory('${jsText(cat)}')">${safe(cat)}</button>
       `).join('');
-      const items = activePresetCategory === 'Wszystkie'
+      const searchTerm = (document.getElementById('presetSearchBox')?.value || '').trim().toLowerCase();
+      const items = (activePresetCategory === 'Wszystkie'
         ? state.presets
-        : state.presets.filter(item => item.category === activePresetCategory);
+        : state.presets.filter(item => item.category === activePresetCategory))
+        .filter(item => item.name.toLowerCase().includes(searchTerm) || (item.category || '').toLowerCase().includes(searchTerm));
       const box = document.getElementById('presetGrid');
+      if (!items.length) {
+        box.innerHTML = '<div class="preset-empty">Brak produktów w tej kategorii lub dla tego wyszukiwania.</div>';
+        return;
+      }
       box.innerHTML = items.map(item => {
         const isSelected = selectedPresets.some(p => p.name === item.name);
         return `
           <button type="button" class="preset ${isSelected ? 'selected' : ''}" data-name="${safe(item.name)}" data-url="${safe(item.image_url)}" onclick="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
             <span class="checkmark">✓</span>
-            <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span><small>${safe(item.category || '')}</small>
+            <span class="preset-thumb"><img src="${safe(item.image_url)}" alt="${safe(item.name)}"></span>
+            <span class="preset-text"><strong>${safe(item.name)}</strong><small>${safe(item.category || '')}</small></span>
           </button>
         `;
       }).join('');
@@ -239,7 +256,7 @@
       if (!input || !info) return;
       input.value = JSON.stringify(selectedPresets);
       const count = selectedPresets.length;
-      info.textContent = count ? `Wybrano: ${selectedPresets.map(p => p.name).join(', ')}` : 'Nie wybrano gotowych produktów.';
+      info.textContent = count ? `Wybrano ${count} produktów: ${selectedPresets.map(p => p.name).join(', ')}` : 'Nie wybrano gotowych produktów.';
       const btn = document.getElementById('productSubmitBtn');
       if (btn) btn.textContent = count > 1 ? `Dodaj ${count} produktów` : 'Dodaj produkt';
     }
