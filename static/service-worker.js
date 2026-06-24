@@ -1,7 +1,7 @@
-const CACHE_NAME = 'grocery-pantry-v2';
+const CACHE_NAME = 'grocery-pantry-v3-colorful';
 const STATIC_ASSETS = [
   '/',
-  '/static/style.css',
+  '/static/style.css?v=3',
   '/manifest.webmanifest',
   '/static/icons/icon-192.png',
   '/static/icons/icon-512.png',
@@ -32,6 +32,6 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request).catch(() => caches.match(event.request).then(response => response || caches.match('/')))
+    fetch(event.request, { cache: 'no-store' }).catch(() => caches.match(event.request).then(response => response || caches.match('/')))
   );
 });

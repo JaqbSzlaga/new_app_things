@@ -3,61 +3,68 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#2f6f4e">
+  <meta name="theme-color" content="#fff3df">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="Spiżarnia">
-  <title>Domowa spiżarnia</title>
+  <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
 </head>
 <body data-tab="pantry">
-  <header class="hero">
-    <div class="hero-copy">
-      <div class="app-badge">🥫 Spiżarnia domowa</div>
-      <h1>Co mamy w domu?</h1>
-      <p>Wspólne stany produktów dla kilku domów i jedna lista zakupów z informacją, gdzie czego brakuje.</p>
-    </div>
-    <div class="hero-actions">
-      <button class="primary" onclick="openDialog('productDialog')">+ Produkt</button>
-      <button class="soft" onclick="openDialog('homeDialog')">+ Dom</button>
-    </div>
-  </header>
+  <div class="phone-shell">
+    <header class="app-top">
+      <button class="icon-btn" onclick="openDialog('homeDialog')" aria-label="Dodaj dom">☰</button>
+      <h1>Spiżarnia</h1>
+      <button class="basket-btn" onclick="setTab('shopping')" aria-label="Lista zakupów">🛍️<span id="shoppingBadge">0</span></button>
+    </header>
 
-  <nav class="mobile-tabs" aria-label="Przełącz sekcję">
-    <button class="tab active" data-tab="pantry" onclick="setTab('pantry')">Spiżarnia</button>
-    <button class="tab" data-tab="shopping" onclick="setTab('shopping')">Zakupy <span id="shoppingCount">0</span></button>
-  </nav>
-
-  <main class="layout">
-    <section class="panel wide" id="pantryPanel">
-      <div class="section-head">
-        <div>
-          <h2>Produkty w domach</h2>
-          <p>Karta zostaje nawet przy stanie 0. Usuwa się dopiero przyciskiem „Usuń”.</p>
-        </div>
-        <input id="searchBox" class="search" placeholder="Szukaj produktu…" oninput="renderHomes()">
-      </div>
-      <div id="homes" class="homes"></div>
+    <section class="shelf" aria-hidden="true">
+      <span>🪴</span><span>🥑</span><span>🫙</span><span>🍅</span><span>🫙</span><span>🪴</span><span>🍯</span>
+      <i></i>
     </section>
 
-    <aside class="panel shopping-panel" id="shoppingPanel">
-      <div class="section-head compact">
-        <div>
-          <h2>Lista zakupów</h2>
-          <p>Każda pozycja pokazuje, do którego domu brakuje produktu.</p>
+    <nav id="homeTabs" class="home-tabs" aria-label="Wybór domu"></nav>
+
+    <main>
+      <section id="pantryPanel" class="screen active-screen">
+        <div class="search-row">
+          <label class="search-wrap">
+            <span>⌕</span>
+            <input id="searchBox" placeholder="Szukaj produktu..." oninput="renderPantry()">
+          </label>
+          <button class="round-add" onclick="openDialog('productDialog')" aria-label="Dodaj produkt">+</button>
         </div>
-        <button class="ghost" onclick="clearChecked()">Usuń kupione</button>
-      </div>
-      <div id="shopping" class="shopping"></div>
-    </aside>
-  </main>
+
+        <div id="productsList" class="product-list"></div>
+      </section>
+
+      <section id="shoppingPanel" class="screen">
+        <div class="shopping-head">
+          <div>
+            <h2>Lista zakupów</h2>
+            <p>Przy każdym produkcie widać, do którego domu go brakuje.</p>
+          </div>
+          <button class="small-clean" onclick="clearChecked()">Usuń kupione</button>
+        </div>
+        <div id="shopping" class="shopping-list"></div>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Nawigacja">
+      <button class="nav-item active" data-tab="pantry" onclick="setTab('pantry')"><span>⌂</span>Spiżarnia</button>
+      <button class="nav-item" data-tab="shopping" onclick="setTab('shopping')"><span>🛍️<b id="navBadge">0</b></span>Zakupy</button>
+      <button class="fab" onclick="openDialog('productDialog')" aria-label="Dodaj produkt">+</button>
+      <button class="nav-item" onclick="openDialog('homeDialog')"><span>⌂</span>Domy</button>
+      <button class="nav-item" onclick="alert('Najpierw dopracujmy wygląd i funkcje. Tutaj później mogą być ustawienia, kategorie albo współdzielenie.')"><span>•••</span>Więcej</button>
+    </nav>
+  </div>
 
   <dialog id="homeDialog">
     <form method="post" action="/api/homes" class="dialog-card">
       <h3>Dodaj dom</h3>
-      <p class="dialog-help">Np. mieszkanie, dom rodzinny, działka albo akademik.</p>
-      <input name="name" placeholder="np. Mieszkanie" required>
+      <p>Np. Dom 1, Dom 2, mieszkanie, działka albo akademik.</p>
+      <input name="name" placeholder="np. Dom 3" required>
       <div class="dialog-actions">
         <button type="button" onclick="closeDialog('homeDialog')">Anuluj</button>
         <button class="primary" type="submit">Dodaj</button>
@@ -68,7 +75,7 @@
   <dialog id="productDialog">
     <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
       <h3>Dodaj produkt</h3>
-      <p class="dialog-help">Możesz wybrać gotowy produkt albo wpisać własny i dodać swoje zdjęcie.</p>
+      <p>Wybierz gotowy produkt albo wpisz własny i dodaj swoje zdjęcie.</p>
 
       <input name="name" id="productName" placeholder="np. Mleko, Ryż, Makaron" required>
       <input type="hidden" name="preset_image_url" id="presetImageUrl">
@@ -93,6 +100,7 @@
   <script>
     let state = { homes: [], products: [], inventory: [], shopping: [], presets: [] };
     let activeTab = 'pantry';
+    let activeHomeId = null;
 
     const uploadUrl = (filename) => filename ? `/uploads/${filename}` : '';
     const productImage = (product) => product.image_filename ? uploadUrl(product.image_filename) : (product.image_url || '');
@@ -110,16 +118,48 @@
 
     function setTab(tab) {
       activeTab = tab;
-      document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
       document.body.dataset.tab = tab;
+      document.querySelectorAll('.nav-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+      document.getElementById('pantryPanel').classList.toggle('active-screen', tab === 'pantry');
+      document.getElementById('shoppingPanel').classList.toggle('active-screen', tab === 'shopping');
     }
 
     async function loadState() {
       const res = await fetch('/api/state');
       state = await res.json();
-      renderHomes();
+      if (!activeHomeId && state.homes.length) activeHomeId = state.homes[0].id;
+      if (activeHomeId && !state.homes.some(h => h.id === activeHomeId)) activeHomeId = state.homes[0]?.id || null;
+      renderHomeTabs();
+      renderPantry();
       renderShopping();
-      document.getElementById('shoppingCount').textContent = state.shopping.filter(i => !i.checked).length;
+      updateBadges();
+    }
+
+    function updateBadges() {
+      const count = state.shopping.filter(i => !i.checked).length;
+      document.getElementById('shoppingBadge').textContent = count;
+      document.getElementById('navBadge').textContent = count;
+      document.getElementById('shoppingBadge').style.display = count ? 'grid' : 'none';
+      document.getElementById('navBadge').style.display = count ? 'grid' : 'none';
+    }
+
+    function renderHomeTabs() {
+      const root = document.getElementById('homeTabs');
+      if (!state.homes.length) {
+        root.innerHTML = '<button class="home-tab active" onclick="openDialog(\'homeDialog\')">+ Dodaj dom</button>';
+        return;
+      }
+      root.innerHTML = state.homes.map(home => `
+        <button class="home-tab ${home.id === activeHomeId ? 'active' : ''}" onclick="selectHome(${home.id})">
+          <span>⌂</span>${safe(home.name)}
+        </button>
+      `).join('');
+    }
+
+    function selectHome(id) {
+      activeHomeId = id;
+      renderHomeTabs();
+      renderPantry();
     }
 
     function getQty(homeId, productId) {
@@ -166,37 +206,32 @@
           <div class="product-image">${image}</div>
           <div class="product-info">
             <strong>${safe(product.name)}</strong>
-            <span>${qty === 0 ? 'brak — możesz dodać do zakupów' : 'na stanie'}</span>
+            <span>${qty === 0 ? 'brak na stanie' : 'na stanie'}</span>
           </div>
           <div class="counter" aria-label="Licznik produktu">
-            <button onclick="changeQty(${home.id}, ${product.id}, -1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">−</button>
-            <b>${qty}</b>
-            <button onclick="changeQty(${home.id}, ${product.id}, 1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">+</button>
+            <button class="minus" onclick="changeQty(${home.id}, ${product.id}, -1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">−</button>
+            <b class="qty ${qty === 0 ? 'zero' : qty >= 2 ? 'many' : ''}">${qty}</b>
+            <button class="plus" onclick="changeQty(${home.id}, ${product.id}, 1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">+</button>
           </div>
-          <button class="tiny-buy" onclick="addShopping(${home.id}, ${product.id})">Do kupienia</button>
-          <button class="danger-text" onclick="deleteProduct(${product.id}, '${jsText(product.name)}')">Usuń</button>
+          ${qty === 0 ? `<button class="cart-dot" onclick="addShopping(${home.id}, ${product.id})" title="Dodaj do zakupów">🛒</button>` : ''}
+          <button class="delete-link" onclick="deleteProduct(${product.id}, '${jsText(product.name)}')">Usuń</button>
         </article>`;
     }
 
-    function renderHomes() {
-      const root = document.getElementById('homes');
+    function renderPantry() {
+      const root = document.getElementById('productsList');
+      const home = state.homes.find(h => h.id === activeHomeId);
       const term = (document.getElementById('searchBox')?.value || '').trim().toLowerCase();
       const products = state.products.filter(p => p.name.toLowerCase().includes(term));
-      if (!state.homes.length) {
-        root.innerHTML = '<p class="empty-note">Dodaj pierwszy dom.</p>';
+      if (!home) {
+        root.innerHTML = '<p class="empty-note">Dodaj pierwszy dom, a potem produkty.</p>';
         return;
       }
-      root.innerHTML = state.homes.map(home => `
-        <section class="home-block">
-          <div class="home-title">
-            <div><h3>${safe(home.name)}</h3><span>${products.length} produktów</span></div>
-            <button class="danger-text" onclick="deleteHome(${home.id}, '${jsText(home.name)}')">Usuń dom</button>
-          </div>
-          <div class="products-grid">
-            ${products.length ? products.map(p => productCard(home, p)).join('') : '<p class="empty-note">Brak produktów dla tego wyszukiwania.</p>'}
-          </div>
-        </section>
-      `).join('');
+      if (!products.length) {
+        root.innerHTML = '<p class="empty-note">Nie ma jeszcze produktów. Kliknij żółty plus i dodaj pierwszy.</p>';
+        return;
+      }
+      root.innerHTML = products.map(p => productCard(home, p)).join('');
     }
 
     function renderShopping() {
@@ -212,10 +247,8 @@
             <button class="check" onclick="toggleShopping(${item.id})">${item.checked ? '✓' : ''}</button>
             <div class="shopping-img">${img ? `<img src="${safe(img)}" alt="${safe(item.name)}">` : safe(item.name.slice(0,1).toUpperCase())}</div>
             <div class="grow"><strong>${safe(item.name)}</strong><span>brakuje w: <b>${safe(item.home_name || 'Ogólne')}</b></span></div>
-            <div class="mini-counter">
-              <button onclick="changeShopping(${item.id}, -1)">−</button><b>${item.wanted_quantity}</b><button onclick="changeShopping(${item.id}, 1)">+</button>
-            </div>
-            <button class="danger-text" onclick="deleteShopping(${item.id})">Usuń</button>
+            <div class="mini-counter"><button onclick="changeShopping(${item.id}, -1)">−</button><b>${item.wanted_quantity}</b><button onclick="changeShopping(${item.id}, 1)">+</button></div>
+            <button class="delete-link" onclick="deleteShopping(${item.id})">Usuń</button>
           </article>`;
       }).join('');
     }
@@ -238,6 +271,7 @@
         body: JSON.stringify({ home_id: homeId, product_id: productId })
       });
       await loadState();
+      setTab('shopping');
     }
 
     async function deleteProduct(productId, name) {
