@@ -49,3 +49,9 @@ Dla trwałej bazy SQLite i uploadowanych zdjęć dodaj w Renderze persistent dis
 - Można zaznaczyć kilka gotowych produktów naraz i dodać je jednym przyciskiem.
 - Ilość początkowa ustawiona w sekcji domów zostanie zastosowana do wszystkich zaznaczonych produktów.
 - Zmieniono wersję cache PWA, żeby telefon szybciej pobrał nowy wygląd.
+
+
+## v6
+- Poprawione okno dodawania produktów na telefonie.
+- Gotowe produkty są teraz zwykłą pionową listą ze zdjęciem, nazwą, kategorią i kółkiem wyboru.
+- Można zaznaczać kilka produktów i dodać je jednym przyciskiem.

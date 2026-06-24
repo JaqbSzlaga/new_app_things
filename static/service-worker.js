@@ -1,7 +1,7 @@
-const CACHE_NAME = 'grocery-pantry-v7-mobile-sheet';
+const CACHE_NAME = 'grocery-pantry-v8-real-list';
 const STATIC_ASSETS = [
   '/',
-  '/static/style.css?v=7',
+  '/static/style.css?v=8',
   '/manifest.webmanifest',
   '/static/products/mleko.svg',
   '/static/products/jajka.svg',

@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=7">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -91,7 +91,7 @@
       <div class="product-dialog-head">
         <div>
           <h3>Dodaj produkty</h3>
-          <p>Zaznacz kilka gotowych produktów naraz albo wpisz własny produkt.</p>
+          <p>Zaznacz produkty z listy i dodaj je jednym kliknięciem.</p>
         </div>
         <button type="button" class="close-x" onclick="closeDialog('productDialog')" aria-label="Zamknij">✕</button>
       </div>
@@ -222,10 +222,13 @@
       box.innerHTML = items.map(item => {
         const isSelected = selectedPresets.some(p => p.name === item.name);
         return `
-          <button type="button" class="preset ${isSelected ? 'selected' : ''}" data-name="${safe(item.name)}" data-url="${safe(item.image_url)}" onclick="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
-            <span class="checkmark">✓</span>
-            <span class="preset-thumb"><img src="${safe(item.image_url)}" alt="${safe(item.name)}"></span>
-            <span class="preset-text"><strong>${safe(item.name)}</strong><small>${safe(item.category || '')}</small></span>
+          <button type="button" class="preset-row ${isSelected ? 'selected' : ''}" onclick="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
+            <span class="preset-check">${isSelected ? '✓' : ''}</span>
+            <span class="preset-photo"><img src="${safe(item.image_url)}" alt="${safe(item.name)}"></span>
+            <span class="preset-name">
+              <strong>${safe(item.name)}</strong>
+              <small>${safe(item.category || '')}</small>
+            </span>
           </button>
         `;
       }).join('');
