@@ -2,37 +2,50 @@
 <html lang="pl">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2f6f4e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Spiżarnia">
   <title>Domowa spiżarnia</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
+<body data-tab="pantry">
   <header class="hero">
-    <div>
-      <p class="eyebrow">Wspólna lista zakupów</p>
-      <h1>Domowa spiżarnia</h1>
-      <p>Dodawaj domy, produkty, zdjęcia i ilości. Gdy licznik spadnie do zera, aplikacja zapyta, czy dorzucić produkt do kupienia.</p>
+    <div class="hero-copy">
+      <div class="app-badge">🥫 Spiżarnia domowa</div>
+      <h1>Co mamy w domu?</h1>
+      <p>Wspólne stany produktów dla kilku domów i jedna lista zakupów z informacją, gdzie czego brakuje.</p>
     </div>
-    <button class="primary" onclick="openDialog('productDialog')">+ Dodaj produkt</button>
+    <div class="hero-actions">
+      <button class="primary" onclick="openDialog('productDialog')">+ Produkt</button>
+      <button class="soft" onclick="openDialog('homeDialog')">+ Dom</button>
+    </div>
   </header>
 
+  <nav class="mobile-tabs" aria-label="Przełącz sekcję">
+    <button class="tab active" data-tab="pantry" onclick="setTab('pantry')">Spiżarnia</button>
+    <button class="tab" data-tab="shopping" onclick="setTab('shopping')">Zakupy <span id="shoppingCount">0</span></button>
+  </nav>
+
   <main class="layout">
-    <section class="panel wide">
+    <section class="panel wide" id="pantryPanel">
       <div class="section-head">
         <div>
           <h2>Produkty w domach</h2>
-          <p>Każdy produkt zostaje na liście nawet przy 0 sztukach.</p>
+          <p>Karta zostaje nawet przy stanie 0. Usuwa się dopiero przyciskiem „Usuń”.</p>
         </div>
-        <button onclick="openDialog('homeDialog')">+ Dodaj dom</button>
+        <input id="searchBox" class="search" placeholder="Szukaj produktu…" oninput="renderHomes()">
       </div>
       <div id="homes" class="homes"></div>
     </section>
 
-    <aside class="panel shopping-panel">
-      <div class="section-head">
+    <aside class="panel shopping-panel" id="shoppingPanel">
+      <div class="section-head compact">
         <div>
           <h2>Lista zakupów</h2>
-          <p>Wspólna dla wszystkich domów.</p>
+          <p>Każda pozycja pokazuje, do którego domu brakuje produktu.</p>
         </div>
         <button class="ghost" onclick="clearChecked()">Usuń kupione</button>
       </div>
@@ -43,7 +56,8 @@
   <dialog id="homeDialog">
     <form method="post" action="/api/homes" class="dialog-card">
       <h3>Dodaj dom</h3>
-      <input name="name" placeholder="np. Mieszkanie, Dom rodzinny" required>
+      <p class="dialog-help">Np. mieszkanie, dom rodzinny, działka albo akademik.</p>
+      <input name="name" placeholder="np. Mieszkanie" required>
       <div class="dialog-actions">
         <button type="button" onclick="closeDialog('homeDialog')">Anuluj</button>
         <button class="primary" type="submit">Dodaj</button>
@@ -52,12 +66,22 @@
   </dialog>
 
   <dialog id="productDialog">
-    <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card" id="productForm">
+    <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
       <h3>Dodaj produkt</h3>
-      <input name="name" placeholder="np. Mleko, Ryż, Makaron" required>
-      <label class="file-label">Zdjęcie produktu
-        <input type="file" name="image" accept="image/png,image/jpeg,image/webp,image/gif">
+      <p class="dialog-help">Możesz wybrać gotowy produkt albo wpisać własny i dodać swoje zdjęcie.</p>
+
+      <input name="name" id="productName" placeholder="np. Mleko, Ryż, Makaron" required>
+      <input type="hidden" name="preset_image_url" id="presetImageUrl">
+
+      <div>
+        <p class="mini-title">Gotowe produkty</p>
+        <div id="presetGrid" class="preset-grid"></div>
+      </div>
+
+      <label class="file-label">Własne zdjęcie produktu
+        <input type="file" name="image" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" onchange="clearPresetSelection()">
       </label>
+
       <div id="initialQuantities" class="initial-qty"></div>
       <div class="dialog-actions">
         <button type="button" onclick="closeDialog('productDialog')">Anuluj</button>
@@ -67,21 +91,35 @@
   </dialog>
 
   <script>
-    let state = { homes: [], products: [], inventory: [], shopping: [] };
+    let state = { homes: [], products: [], inventory: [], shopping: [], presets: [] };
+    let activeTab = 'pantry';
 
-    const imgUrl = (filename) => filename ? `/uploads/${filename}` : '';
+    const uploadUrl = (filename) => filename ? `/uploads/${filename}` : '';
+    const productImage = (product) => product.image_filename ? uploadUrl(product.image_filename) : (product.image_url || '');
+    const safe = (text) => String(text ?? '').replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));
+    const jsText = (text) => String(text ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, ' ');
 
     function openDialog(id) {
-      if (id === 'productDialog') buildInitialQuantities();
+      if (id === 'productDialog') {
+        buildPresetGrid();
+        buildInitialQuantities();
+      }
       document.getElementById(id).showModal();
     }
     function closeDialog(id) { document.getElementById(id).close(); }
+
+    function setTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll('.tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+      document.body.dataset.tab = tab;
+    }
 
     async function loadState() {
       const res = await fetch('/api/state');
       state = await res.json();
       renderHomes();
       renderShopping();
+      document.getElementById('shoppingCount').textContent = state.shopping.filter(i => !i.checked).length;
     }
 
     function getQty(homeId, productId) {
@@ -89,36 +127,61 @@
       return item ? item.quantity : 0;
     }
 
+    function buildPresetGrid() {
+      const box = document.getElementById('presetGrid');
+      box.innerHTML = state.presets.map(item => `
+        <button type="button" class="preset" data-url="${safe(item.image_url)}" onclick="choosePreset('${jsText(item.name)}', '${jsText(item.image_url)}')">
+          <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span>
+        </button>
+      `).join('');
+    }
+
+    function choosePreset(name, url) {
+      document.getElementById('productName').value = name;
+      document.getElementById('presetImageUrl').value = url;
+      document.getElementById('imageInput').value = '';
+      document.querySelectorAll('.preset').forEach(p => p.classList.toggle('selected', p.dataset.url === url));
+    }
+
+    function clearPresetSelection() {
+      document.getElementById('presetImageUrl').value = '';
+      document.querySelectorAll('.preset').forEach(p => p.classList.remove('selected'));
+    }
+
     function buildInitialQuantities() {
       const box = document.getElementById('initialQuantities');
-      box.innerHTML = '<p class="mini-title">Ilość początkowa</p>' + state.homes.map(home => `
-        <label>${home.name}<input type="number" min="0" value="0" name="qty_home_${home.id}"></label>
+      box.innerHTML = '<p class="mini-title">Ilość początkowa w domach</p>' + state.homes.map(home => `
+        <label><span>${safe(home.name)}</span><input type="number" min="0" value="0" name="qty_home_${home.id}"></label>
       `).join('');
     }
 
     function productCard(home, product) {
       const qty = getQty(home.id, product.id);
-      const image = product.image_filename
-        ? `<img src="${imgUrl(product.image_filename)}" alt="${product.name}">`
-        : `<div class="placeholder">${product.name.slice(0, 1).toUpperCase()}</div>`;
+      const img = productImage(product);
+      const image = img
+        ? `<img src="${safe(img)}" alt="${safe(product.name)}">`
+        : `<div class="placeholder">${safe(product.name.slice(0, 1).toUpperCase())}</div>`;
       return `
         <article class="product-card ${qty === 0 ? 'empty' : ''}">
           <div class="product-image">${image}</div>
           <div class="product-info">
-            <strong>${product.name}</strong>
-            <span>${qty === 0 ? 'brak w domu' : 'na stanie'}</span>
+            <strong>${safe(product.name)}</strong>
+            <span>${qty === 0 ? 'brak — możesz dodać do zakupów' : 'na stanie'}</span>
           </div>
-          <div class="counter">
-            <button onclick="changeQty(${home.id}, ${product.id}, -1, ${qty})">−</button>
+          <div class="counter" aria-label="Licznik produktu">
+            <button onclick="changeQty(${home.id}, ${product.id}, -1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">−</button>
             <b>${qty}</b>
-            <button onclick="changeQty(${home.id}, ${product.id}, 1, ${qty})">+</button>
+            <button onclick="changeQty(${home.id}, ${product.id}, 1, ${qty}, '${jsText(home.name)}', '${jsText(product.name)}')">+</button>
           </div>
-          <button class="danger-text" onclick="deleteProduct(${product.id}, '${product.name.replaceAll("'", "\\'")}')">Usuń</button>
+          <button class="tiny-buy" onclick="addShopping(${home.id}, ${product.id})">Do kupienia</button>
+          <button class="danger-text" onclick="deleteProduct(${product.id}, '${jsText(product.name)}')">Usuń</button>
         </article>`;
     }
 
     function renderHomes() {
       const root = document.getElementById('homes');
+      const term = (document.getElementById('searchBox')?.value || '').trim().toLowerCase();
+      const products = state.products.filter(p => p.name.toLowerCase().includes(term));
       if (!state.homes.length) {
         root.innerHTML = '<p class="empty-note">Dodaj pierwszy dom.</p>';
         return;
@@ -126,11 +189,11 @@
       root.innerHTML = state.homes.map(home => `
         <section class="home-block">
           <div class="home-title">
-            <h3>${home.name}</h3>
-            <button class="danger-text" onclick="deleteHome(${home.id}, '${home.name.replaceAll("'", "\\'")}')">Usuń dom</button>
+            <div><h3>${safe(home.name)}</h3><span>${products.length} produktów</span></div>
+            <button class="danger-text" onclick="deleteHome(${home.id}, '${jsText(home.name)}')">Usuń dom</button>
           </div>
           <div class="products-grid">
-            ${state.products.length ? state.products.map(p => productCard(home, p)).join('') : '<p class="empty-note">Dodaj pierwszy produkt.</p>'}
+            ${products.length ? products.map(p => productCard(home, p)).join('') : '<p class="empty-note">Brak produktów dla tego wyszukiwania.</p>'}
           </div>
         </section>
       `).join('');
@@ -142,27 +205,37 @@
         root.innerHTML = '<p class="empty-note">Lista zakupów jest pusta.</p>';
         return;
       }
-      root.innerHTML = state.shopping.map(item => `
-        <article class="shopping-item ${item.checked ? 'checked' : ''}">
-          <button class="check" onclick="toggleShopping(${item.id})">${item.checked ? '✓' : ''}</button>
-          <div class="shopping-img">${item.image_filename ? `<img src="${imgUrl(item.image_filename)}" alt="${item.name}">` : item.name.slice(0,1).toUpperCase()}</div>
-          <div class="grow"><strong>${item.name}</strong><span>do kupienia</span></div>
-          <div class="mini-counter">
-            <button onclick="changeShopping(${item.id}, -1)">−</button><b>${item.wanted_quantity}</b><button onclick="changeShopping(${item.id}, 1)">+</button>
-          </div>
-          <button class="danger-text" onclick="deleteShopping(${item.id})">Usuń</button>
-        </article>
-      `).join('');
+      root.innerHTML = state.shopping.map(item => {
+        const img = productImage(item);
+        return `
+          <article class="shopping-item ${item.checked ? 'checked' : ''}">
+            <button class="check" onclick="toggleShopping(${item.id})">${item.checked ? '✓' : ''}</button>
+            <div class="shopping-img">${img ? `<img src="${safe(img)}" alt="${safe(item.name)}">` : safe(item.name.slice(0,1).toUpperCase())}</div>
+            <div class="grow"><strong>${safe(item.name)}</strong><span>brakuje w: <b>${safe(item.home_name || 'Ogólne')}</b></span></div>
+            <div class="mini-counter">
+              <button onclick="changeShopping(${item.id}, -1)">−</button><b>${item.wanted_quantity}</b><button onclick="changeShopping(${item.id}, 1)">+</button>
+            </div>
+            <button class="danger-text" onclick="deleteShopping(${item.id})">Usuń</button>
+          </article>`;
+      }).join('');
     }
 
-    async function changeQty(homeId, productId, delta, currentQty) {
+    async function changeQty(homeId, productId, delta, currentQty, homeName, productName) {
       let addToShopping = false;
       if (delta < 0 && currentQty === 1) {
-        addToShopping = confirm('To będzie 0. Dodać ten produkt do listy zakupów?');
+        addToShopping = confirm(`Produkt „${productName}” w domu „${homeName}” będzie miał 0. Dodać do listy zakupów dla tego domu?`);
       }
       await fetch('/api/inventory/change', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ home_id: homeId, product_id: productId, delta, add_to_shopping: addToShopping })
+      });
+      await loadState();
+    }
+
+    async function addShopping(homeId, productId) {
+      await fetch('/api/shopping/add', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ home_id: homeId, product_id: productId })
       });
       await loadState();
     }
@@ -174,7 +247,7 @@
     }
 
     async function deleteHome(homeId, name) {
-      if (!confirm(`Usunąć dom „${name}”? Produkty zostaną, znikną tylko ilości dla tego domu.`)) return;
+      if (!confirm(`Usunąć dom „${name}”? Produkty zostaną, znikną tylko ilości i zakupy dla tego domu.`)) return;
       await fetch(`/api/homes/${homeId}/delete`, { method: 'POST' });
       await loadState();
     }
@@ -186,6 +259,10 @@
     async function toggleShopping(id) { await fetch(`/api/shopping/${id}/toggle`, { method: 'POST' }); await loadState(); }
     async function deleteShopping(id) { await fetch(`/api/shopping/${id}/delete`, { method: 'POST' }); await loadState(); }
     async function clearChecked() { await fetch('/api/shopping/clear_checked', { method: 'POST' }); await loadState(); }
+
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
+    }
 
     loadState();
     setInterval(loadState, 5000);
