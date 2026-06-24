@@ -42,3 +42,10 @@ DATA_DIR=/var/data
 ```
 
 Dla trwałej bazy SQLite i uploadowanych zdjęć dodaj w Renderze persistent disk z mount path `/var/data`.
+
+## Zmiany v4
+
+- Gotowe produkty w oknie dodawania są teraz mniejsze i układają się w siatkę po 3 kafelki na telefonie.
+- Można zaznaczyć kilka gotowych produktów naraz i dodać je jednym przyciskiem.
+- Ilość początkowa ustawiona w sekcji domów zostanie zastosowana do wszystkich zaznaczonych produktów.
+- Zmieniono wersję cache PWA, żeby telefon szybciej pobrał nowy wygląd.

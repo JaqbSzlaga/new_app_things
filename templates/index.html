@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=6">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -89,15 +89,17 @@
   <dialog id="productDialog">
     <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
       <h3>Dodaj produkt</h3>
-      <p>Wybierz gotowy produkt z kategorii albo wpisz własny i dodaj swoje zdjęcie.</p>
+      <p>Wybierz jeden lub kilka gotowych produktów. Możesz też wpisać własny produkt i dodać zdjęcie.</p>
 
-      <input name="name" id="productName" placeholder="np. Mleko, Ryż, Makaron" required>
+      <input name="name" id="productName" placeholder="Własny produkt, np. mleko owsiane">
       <input type="hidden" name="preset_image_url" id="presetImageUrl">
+      <input type="hidden" name="selected_presets" id="selectedPresets" value="[]">
 
       <div>
         <p class="mini-title">Gotowe produkty</p>
         <div id="presetCategories" class="category-pills"></div>
-        <div id="presetGrid" class="preset-grid"></div>
+        <div id="presetGrid" class="preset-grid compact"></div>
+        <div class="selected-info" id="selectedInfo">Nie wybrano gotowych produktów.</div>
       </div>
 
       <label class="file-label">Własne zdjęcie produktu
@@ -107,7 +109,7 @@
       <div id="initialQuantities" class="initial-qty"></div>
       <div class="dialog-actions">
         <button type="button" onclick="closeDialog('productDialog')">Anuluj</button>
-        <button class="primary" type="submit">Dodaj produkt</button>
+        <button class="primary" type="submit" id="productSubmitBtn">Dodaj produkt</button>
       </div>
     </form>
   </dialog>
@@ -115,6 +117,7 @@
   <script>
     let state = { homes: [], products: [], inventory: [], shopping: [], notes: [], presets: [], preset_categories: [] };
     let activePresetCategory = 'Wszystkie';
+    let selectedPresets = [];
     let activeTab = 'pantry';
     let activeHomeId = null;
 
@@ -125,6 +128,11 @@
 
     function openDialog(id) {
       if (id === 'productDialog') {
+        selectedPresets = [];
+        document.getElementById('productForm').reset();
+        document.getElementById('presetImageUrl').value = '';
+        document.getElementById('selectedPresets').value = '[]';
+        updateSelectedInfo();
         buildPresetGrid();
         buildInitialQuantities();
       }
@@ -195,11 +203,15 @@
         ? state.presets
         : state.presets.filter(item => item.category === activePresetCategory);
       const box = document.getElementById('presetGrid');
-      box.innerHTML = items.map(item => `
-        <button type="button" class="preset" data-url="${safe(item.image_url)}" onclick="choosePreset('${jsText(item.name)}', '${jsText(item.image_url)}')">
-          <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span><small>${safe(item.category || '')}</small>
-        </button>
-      `).join('');
+      box.innerHTML = items.map(item => {
+        const isSelected = selectedPresets.some(p => p.name === item.name);
+        return `
+          <button type="button" class="preset ${isSelected ? 'selected' : ''}" data-name="${safe(item.name)}" data-url="${safe(item.image_url)}" onclick="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
+            <span class="checkmark">✓</span>
+            <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span><small>${safe(item.category || '')}</small>
+          </button>
+        `;
+      }).join('');
     }
 
     function selectPresetCategory(category) {
@@ -207,16 +219,38 @@
       buildPresetGrid();
     }
 
-    function choosePreset(name, url) {
-      document.getElementById('productName').value = name;
-      document.getElementById('presetImageUrl').value = url;
+    function togglePreset(name, url, category) {
+      const index = selectedPresets.findIndex(p => p.name === name);
+      if (index >= 0) {
+        selectedPresets.splice(index, 1);
+      } else {
+        selectedPresets.push({ name, image_url: url, category });
+      }
       document.getElementById('imageInput').value = '';
-      document.querySelectorAll('.preset').forEach(p => p.classList.toggle('selected', p.dataset.url === url));
+      document.getElementById('presetImageUrl').value = selectedPresets.length === 1 ? selectedPresets[0].image_url : '';
+      document.getElementById('productName').required = selectedPresets.length === 0;
+      updateSelectedInfo();
+      buildPresetGrid();
+    }
+
+    function updateSelectedInfo() {
+      const input = document.getElementById('selectedPresets');
+      const info = document.getElementById('selectedInfo');
+      if (!input || !info) return;
+      input.value = JSON.stringify(selectedPresets);
+      const count = selectedPresets.length;
+      info.textContent = count ? `Wybrano: ${selectedPresets.map(p => p.name).join(', ')}` : 'Nie wybrano gotowych produktów.';
+      const btn = document.getElementById('productSubmitBtn');
+      if (btn) btn.textContent = count > 1 ? `Dodaj ${count} produktów` : 'Dodaj produkt';
     }
 
     function clearPresetSelection() {
+      selectedPresets = [];
       document.getElementById('presetImageUrl').value = '';
-      document.querySelectorAll('.preset').forEach(p => p.classList.remove('selected'));
+      document.getElementById('selectedPresets').value = '[]';
+      document.getElementById('productName').required = true;
+      updateSelectedInfo();
+      buildPresetGrid();
     }
 
     function buildInitialQuantities() {
@@ -225,6 +259,42 @@
         <label><span>${safe(home.name)}</span><input type="number" min="0" value="0" name="qty_home_${home.id}"></label>
       `).join('');
     }
+
+    async function submitProductForm(event) {
+      event.preventDefault();
+      const form = event.currentTarget;
+      const formData = new FormData(form);
+      const customName = (formData.get('name') || '').trim();
+
+      if (selectedPresets.length > 0) {
+        const qty_by_home = {};
+        state.homes.forEach(home => {
+          qty_by_home[home.id] = Number(formData.get(`qty_home_${home.id}`) || 0);
+        });
+        const products = [...selectedPresets];
+        if (customName) {
+          products.push({ name: customName, image_url: '', category: 'Własne' });
+        }
+        await fetch('/api/products/bulk', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ products, qty_by_home })
+        });
+        closeDialog('productDialog');
+        await loadState();
+        return;
+      }
+
+      if (!customName) {
+        alert('Wpisz nazwę produktu albo zaznacz gotowy produkt.');
+        return;
+      }
+      await fetch('/api/products', { method: 'POST', body: formData });
+      closeDialog('productDialog');
+      await loadState();
+    }
+
+    document.getElementById('productForm').addEventListener('submit', submitProductForm);
 
     function productCard(home, product) {
       const qty = getQty(home.id, product.id);

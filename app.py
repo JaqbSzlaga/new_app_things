@@ -335,6 +335,56 @@ def add_product():
     return redirect(url_for("index"))
 
 
+
+
+@app.post("/api/products/bulk")
+def add_products_bulk():
+    data = request.get_json(force=True) or {}
+    products = data.get("products") or []
+    qty_by_home = data.get("qty_by_home") or {}
+
+    if not products:
+        return jsonify({"error": "Nie wybrano produktów."}), 400
+
+    created = 0
+    with db() as conn:
+        homes = [row["id"] for row in conn.execute("SELECT id FROM homes")]
+        for item in products:
+            name = (item.get("name") or "").strip()
+            if not name:
+                continue
+            image_url = valid_preset_url(item.get("image_url"))
+            existing = conn.execute("SELECT id FROM products WHERE lower(name) = lower(?)", (name,)).fetchone()
+            if existing:
+                product_id = existing["id"]
+                if image_url:
+                    conn.execute("UPDATE products SET image_url = COALESCE(image_url, ?), image_filename = image_filename WHERE id = ?", (image_url, product_id))
+            else:
+                cur = conn.execute(
+                    "INSERT INTO products(name, image_filename, image_url, created_at) VALUES(?, NULL, ?, ?)",
+                    (name, image_url, int(time.time())),
+                )
+                product_id = cur.lastrowid
+                created += 1
+
+            for home_id in homes:
+                try:
+                    qty = int(qty_by_home.get(str(home_id), qty_by_home.get(home_id, 0)) or 0)
+                except (TypeError, ValueError):
+                    qty = 0
+                conn.execute(
+                    """
+                    INSERT INTO inventory(home_id, product_id, quantity, updated_at)
+                    VALUES(?, ?, ?, ?)
+                    ON CONFLICT(home_id, product_id)
+                    DO UPDATE SET quantity = excluded.quantity, updated_at = excluded.updated_at
+                    """,
+                    (home_id, product_id, max(0, qty), int(time.time())),
+                )
+
+    return jsonify({"ok": True, "created": created})
+
+
 @app.post("/api/products/<int:product_id>/delete")
 def delete_product(product_id: int):
     with db() as conn:
