@@ -55,3 +55,9 @@ Dla trwałej bazy SQLite i uploadowanych zdjęć dodaj w Renderze persistent dis
 - Poprawione okno dodawania produktów na telefonie.
 - Gotowe produkty są teraz zwykłą pionową listą ze zdjęciem, nazwą, kategorią i kółkiem wyboru.
 - Można zaznaczać kilka produktów i dodać je jednym przyciskiem.
+
+
+## v7
+- Cały widok dodawania produktów przepisany od zera.
+- Usunięte stare klasy kafelków z pickera.
+- Nowy picker to prosta lista: checkbox, zdjęcie, nazwa, kategoria.

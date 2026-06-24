@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=8">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -86,39 +86,41 @@
     </form>
   </dialog>
 
-  <dialog id="productDialog">
-    <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
-      <div class="product-dialog-head">
+  <dialog id="productDialog" class="add-products-dialog">
+    <form method="post" action="/api/products" enctype="multipart/form-data" id="productForm" class="add-products-sheet">
+      <div class="add-sheet-head">
         <div>
           <h3>Dodaj produkty</h3>
-          <p>Zaznacz produkty z listy i dodaj je jednym kliknięciem.</p>
+          <p>Zaznacz kilka produktów z listy albo dodaj własny.</p>
         </div>
-        <button type="button" class="close-x" onclick="closeDialog('productDialog')" aria-label="Zamknij">✕</button>
+        <button type="button" class="sheet-close" onclick="closeDialog('productDialog')" aria-label="Zamknij">✕</button>
       </div>
 
-      <input name="name" id="productName" placeholder="Własny produkt, np. mleko owsiane">
+      <input name="name" id="productName" class="custom-product-input" placeholder="Własny produkt, np. mleko owsiane">
       <input type="hidden" name="preset_image_url" id="presetImageUrl">
       <input type="hidden" name="selected_presets" id="selectedPresets" value="[]">
 
-      <div>
-        <p class="mini-title">Gotowe produkty</p>
-        <div id="presetCategories" class="category-pills"></div>
-        <label class="preset-search">
-          <span>⌕</span>
-          <input id="presetSearchBox" type="text" placeholder="Szukaj np. mleko, krakersy..." oninput="buildPresetGrid()">
-        </label>
-        <div id="presetGrid" class="preset-grid compact"></div>
-        <div class="selected-info" id="selectedInfo">Nie wybrano gotowych produktów.</div>
-      </div>
-
-      <label class="file-label">Własne zdjęcie produktu
-        <input type="file" name="image" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" onchange="clearPresetSelection()">
+      <label class="picker-search">
+        <span>⌕</span>
+        <input id="presetSearchBox" type="text" placeholder="Szukaj produktu..." oninput="buildPresetGrid()">
       </label>
 
-      <div id="initialQuantities" class="initial-qty"></div>
-      <div class="dialog-actions">
-        <button type="button" onclick="closeDialog('productDialog')">Anuluj</button>
-        <button class="primary" type="submit" id="productSubmitBtn">Dodaj produkt</button>
+      <div id="presetCategories" class="picker-categories"></div>
+
+      <div id="presetGrid" class="picker-list"></div>
+
+      <div class="picker-selected" id="selectedInfo">Nie wybrano gotowych produktów.</div>
+
+      <details class="custom-photo-box">
+        <summary>Własne zdjęcie produktu</summary>
+        <input type="file" name="image" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" onchange="clearPresetSelection()">
+      </details>
+
+      <div id="initialQuantities" class="picker-qty"></div>
+
+      <div class="sheet-actions">
+        <button type="button" class="cancel-btn" onclick="closeDialog('productDialog')">Anuluj</button>
+        <button class="add-btn" type="submit" id="productSubmitBtn">Dodaj produkt</button>
       </div>
     </form>
   </dialog>
@@ -214,22 +216,24 @@
         ? state.presets
         : state.presets.filter(item => item.category === activePresetCategory))
         .filter(item => item.name.toLowerCase().includes(searchTerm) || (item.category || '').toLowerCase().includes(searchTerm));
+
       const box = document.getElementById('presetGrid');
       if (!items.length) {
-        box.innerHTML = '<div class="preset-empty">Brak produktów w tej kategorii lub dla tego wyszukiwania.</div>';
+        box.innerHTML = '<div class="picker-empty">Brak produktów w tej kategorii.</div>';
         return;
       }
+
       box.innerHTML = items.map(item => {
         const isSelected = selectedPresets.some(p => p.name === item.name);
         return `
-          <button type="button" class="preset-row ${isSelected ? 'selected' : ''}" onclick="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
-            <span class="preset-check">${isSelected ? '✓' : ''}</span>
-            <span class="preset-photo"><img src="${safe(item.image_url)}" alt="${safe(item.name)}"></span>
-            <span class="preset-name">
+          <label class="picker-row ${isSelected ? 'is-selected' : ''}">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} onchange="togglePreset('${jsText(item.name)}', '${jsText(item.image_url)}', '${jsText(item.category || '')}')">
+            <span class="picker-img"><img src="${safe(item.image_url)}" alt="${safe(item.name)}"></span>
+            <span class="picker-text">
               <strong>${safe(item.name)}</strong>
               <small>${safe(item.category || '')}</small>
             </span>
-          </button>
+          </label>
         `;
       }).join('');
     }
