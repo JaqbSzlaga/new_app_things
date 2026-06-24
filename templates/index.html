@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=3">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=4">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -49,6 +49,20 @@
         </div>
         <div id="shopping" class="shopping-list"></div>
       </section>
+
+      <section id="notesPanel" class="screen">
+        <div class="shopping-head">
+          <div>
+            <h2>Notatki</h2>
+            <p>Zapisuj pomysły na ulepszenie aplikacji podczas korzystania.</p>
+          </div>
+        </div>
+        <form class="note-form" onsubmit="addNote(event)">
+          <textarea id="noteBody" rows="3" placeholder="Np. dodać skaner kodów, powiadomienia albo wspólne konto..."></textarea>
+          <button class="primary-note" type="submit">Dodaj notatkę</button>
+        </form>
+        <div id="notes" class="notes-list"></div>
+      </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Nawigacja">
@@ -56,7 +70,7 @@
       <button class="nav-item" data-tab="shopping" onclick="setTab('shopping')"><span>🛍️<b id="navBadge">0</b></span>Zakupy</button>
       <button class="fab" onclick="openDialog('productDialog')" aria-label="Dodaj produkt">+</button>
       <button class="nav-item" onclick="openDialog('homeDialog')"><span>⌂</span>Domy</button>
-      <button class="nav-item" onclick="alert('Najpierw dopracujmy wygląd i funkcje. Tutaj później mogą być ustawienia, kategorie albo współdzielenie.')"><span>•••</span>Więcej</button>
+      <button class="nav-item" data-tab="notes" onclick="setTab('notes')"><span>✎</span>Notatki</button>
     </nav>
   </div>
 
@@ -75,13 +89,14 @@
   <dialog id="productDialog">
     <form method="post" action="/api/products" enctype="multipart/form-data" class="dialog-card product-dialog" id="productForm">
       <h3>Dodaj produkt</h3>
-      <p>Wybierz gotowy produkt albo wpisz własny i dodaj swoje zdjęcie.</p>
+      <p>Wybierz gotowy produkt z kategorii albo wpisz własny i dodaj swoje zdjęcie.</p>
 
       <input name="name" id="productName" placeholder="np. Mleko, Ryż, Makaron" required>
       <input type="hidden" name="preset_image_url" id="presetImageUrl">
 
       <div>
         <p class="mini-title">Gotowe produkty</p>
+        <div id="presetCategories" class="category-pills"></div>
         <div id="presetGrid" class="preset-grid"></div>
       </div>
 
@@ -98,7 +113,8 @@
   </dialog>
 
   <script>
-    let state = { homes: [], products: [], inventory: [], shopping: [], presets: [] };
+    let state = { homes: [], products: [], inventory: [], shopping: [], notes: [], presets: [], preset_categories: [] };
+    let activePresetCategory = 'Wszystkie';
     let activeTab = 'pantry';
     let activeHomeId = null;
 
@@ -122,6 +138,7 @@
       document.querySelectorAll('.nav-item').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
       document.getElementById('pantryPanel').classList.toggle('active-screen', tab === 'pantry');
       document.getElementById('shoppingPanel').classList.toggle('active-screen', tab === 'shopping');
+      document.getElementById('notesPanel').classList.toggle('active-screen', tab === 'notes');
     }
 
     async function loadState() {
@@ -132,6 +149,7 @@
       renderHomeTabs();
       renderPantry();
       renderShopping();
+      renderNotes();
       updateBadges();
     }
 
@@ -168,12 +186,25 @@
     }
 
     function buildPresetGrid() {
+      const cats = ['Wszystkie', ...(state.preset_categories || [])];
+      const catBox = document.getElementById('presetCategories');
+      catBox.innerHTML = cats.map(cat => `
+        <button type="button" class="category-pill ${activePresetCategory === cat ? 'active' : ''}" onclick="selectPresetCategory('${jsText(cat)}')">${safe(cat)}</button>
+      `).join('');
+      const items = activePresetCategory === 'Wszystkie'
+        ? state.presets
+        : state.presets.filter(item => item.category === activePresetCategory);
       const box = document.getElementById('presetGrid');
-      box.innerHTML = state.presets.map(item => `
+      box.innerHTML = items.map(item => `
         <button type="button" class="preset" data-url="${safe(item.image_url)}" onclick="choosePreset('${jsText(item.name)}', '${jsText(item.image_url)}')">
-          <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span>
+          <img src="${safe(item.image_url)}" alt="${safe(item.name)}"><span>${safe(item.name)}</span><small>${safe(item.category || '')}</small>
         </button>
       `).join('');
+    }
+
+    function selectPresetCategory(category) {
+      activePresetCategory = category;
+      buildPresetGrid();
     }
 
     function choosePreset(name, url) {
@@ -252,6 +283,38 @@
           </article>`;
       }).join('');
     }
+
+    function renderNotes() {
+      const root = document.getElementById('notes');
+      if (!root) return;
+      if (!state.notes || !state.notes.length) {
+        root.innerHTML = '<p class="empty-note">Nie ma jeszcze notatek. Zapisz pierwszy pomysł na ulepszenie aplikacji.</p>';
+        return;
+      }
+      root.innerHTML = state.notes.map(note => `
+        <article class="note-item ${note.done ? 'done' : ''}">
+          <button class="check" onclick="toggleNote(${note.id})">${note.done ? '✓' : ''}</button>
+          <p>${safe(note.body)}</p>
+          <button class="delete-link" onclick="deleteNote(${note.id})">Usuń</button>
+        </article>
+      `).join('');
+    }
+
+    async function addNote(event) {
+      event.preventDefault();
+      const input = document.getElementById('noteBody');
+      const body = input.value.trim();
+      if (!body) return;
+      await fetch('/api/notes', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ body })
+      });
+      input.value = '';
+      await loadState();
+    }
+
+    async function toggleNote(id) { await fetch(`/api/notes/${id}/toggle`, { method: 'POST' }); await loadState(); }
+    async function deleteNote(id) { await fetch(`/api/notes/${id}/delete`, { method: 'POST' }); await loadState(); }
 
     async function changeQty(homeId, productId, delta, currentQty, homeName, productName) {
       let addToShopping = false;

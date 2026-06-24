@@ -1,93 +1,44 @@
 # Domowa spiżarnia
 
-Prosta aplikacja Flask na GitHub + Render do pilnowania rzeczy spożywczych w kilku domach.
+Mobilna aplikacja webowa Flask + SQLite do prowadzenia wspólnej spiżarni i listy zakupów dla kilku domów.
 
 ## Funkcje
 
-- dodawanie wielu domów, np. `Dom 1`, `Dom 2`, `Mieszkanie`, `Działka`,
-- jeden wspólny katalog produktów,
-- licznik `+ / −` osobno dla każdego produktu w każdym domu,
-- produkt nie znika, gdy ilość spadnie do `0`,
-- przy zejściu z `1` do `0` aplikacja pyta, czy dodać produkt do listy zakupów,
-- lista zakupów pokazuje, **do którego domu** brakuje danego produktu,
-- możliwość ręcznego dodania produktu do listy zakupów dla konkretnego domu,
-- 10 gotowych produktów z grafikami: mleko, jajka, chleb, masło, ser, makaron, ryż, cukier, kawa, woda,
-- możliwość dodania własnego zdjęcia produktu,
-- PWA: aplikację można dodać do ekranu głównego telefonu,
-- czytelniejszy wygląd mobilny z przełączaniem `Spiżarnia / Zakupy`,
-- usuwanie produktu oraz domu.
+- wiele domów, np. Dom 1, Dom 2, mieszkanie, działka,
+- produkty ze zdjęciami i licznikami `+ / −`,
+- produkt nie znika po zejściu do `0`, usuwa się dopiero przyciskiem `Usuń`,
+- pytanie o dodanie do listy zakupów, gdy ilość w danym domu spadnie do `0`,
+- lista zakupów pokazuje, do którego domu brakuje produktu,
+- około 100 gotowych produktów z grafikami, podzielonych na kategorie,
+- zakładka **Notatki** do zapisywania pomysłów na ulepszenia aplikacji,
+- PWA, czyli możliwość dodania aplikacji do ekranu głównego telefonu.
 
-## Uruchomienie lokalnie
+## Lokalnie
 
 ```bash
-python -m venv .venv
-.venv\Scripts\activate
 pip install -r requirements.txt
 python app.py
 ```
 
-Potem otwórz:
-
-```text
-http://127.0.0.1:5000
-```
-
-Na Mac/Linux aktywacja venv wygląda tak:
-
-```bash
-source .venv/bin/activate
-```
-
-## Wrzucenie na GitHub
-
-```bash
-git add .
-git commit -m "Improve mobile pantry app"
-git push
-```
-
-Jeśli to pierwszy push do pustego repo:
-
-```bash
-git init
-git add .
-git commit -m "Initial grocery pantry app"
-git branch -M main
-git remote add origin https://github.com/TWOJ_LOGIN/TWOJE_REPO.git
-git push -u origin main
-```
-
 ## Render
 
-Projekt ma gotowy `render.yaml`, więc Render może utworzyć Web Service z dyskiem automatycznie.
+Build Command:
 
-Najważniejsze ustawienia ręczne, jeśli robisz bez `render.yaml`:
+```bash
+pip install -r requirements.txt
+```
 
-- Build Command: `pip install -r requirements.txt`
-- Start Command: `gunicorn app:app`
-- Environment: `Python 3`
-- Environment variable: `PYTHON_VERSION=3.11.9`
-- Environment variable: `DATA_DIR=/var/data`
-- Disk mount path: `/var/data`
+Start Command:
 
-Render ma domyślnie efemeryczny system plików, więc bez persistent disk dane i zdjęcia mogą zniknąć po restarcie/redeployu. Dysk zachowuje tylko pliki zapisane pod jego mount path, np. `/var/data`.
+```bash
+gunicorn --bind 0.0.0.0:$PORT app:app
+```
 
-## Jak dodać na ekran telefonu
+Zalecane zmienne środowiskowe:
 
-### iPhone / Safari
+```bash
+PYTHON_VERSION=3.11.9
+DATA_DIR=/var/data
+```
 
-1. Otwórz link aplikacji w Safari.
-2. Kliknij ikonę udostępniania.
-3. Wybierz `Do ekranu początkowego`.
-4. Zapisz.
-
-### Android / Chrome
-
-1. Otwórz link aplikacji w Chrome.
-2. Kliknij menu `⋮`.
-3. Wybierz `Dodaj do ekranu głównego` albo `Zainstaluj aplikację`.
-4. Zapisz.
-
-## Ważne
-
-To jest wersja bez logowania. Każdy, kto ma link do aplikacji, może zmieniać produkty i listę zakupów. Następny sensowny krok to dodanie prostego hasła rodzinnego albo kont użytkowników.
+Dla trwałej bazy SQLite i uploadowanych zdjęć dodaj w Renderze persistent disk z mount path `/var/data`.

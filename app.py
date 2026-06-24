@@ -21,18 +21,67 @@ app.config["SECRET_KEY"] = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 app.config["MAX_CONTENT_LENGTH"] = 6 * 1024 * 1024
 
 PRESET_PRODUCTS = [
-    {"name": "Mleko", "image_url": "/static/products/mleko.svg"},
-    {"name": "Jajka", "image_url": "/static/products/jajka.svg"},
-    {"name": "Chleb", "image_url": "/static/products/chleb.svg"},
-    {"name": "Masło", "image_url": "/static/products/maslo.svg"},
-    {"name": "Ser", "image_url": "/static/products/ser.svg"},
-    {"name": "Makaron", "image_url": "/static/products/makaron.svg"},
-    {"name": "Ryż", "image_url": "/static/products/ryz.svg"},
-    {"name": "Cukier", "image_url": "/static/products/cukier.svg"},
-    {"name": "Kawa", "image_url": "/static/products/kawa.svg"},
-    {"name": "Woda", "image_url": "/static/products/woda.svg"},
+    {'category': 'Podstawowe', 'name': 'Mleko', 'image_url': '/static/products/mleko.svg'},
+    {'category': 'Podstawowe', 'name': 'Jajka', 'image_url': '/static/products/jajka.svg'},
+    {'category': 'Podstawowe', 'name': 'Chleb', 'image_url': '/static/products/chleb.svg'},
+    {'category': 'Podstawowe', 'name': 'Masło', 'image_url': '/static/products/maso.svg'},
+    {'category': 'Podstawowe', 'name': 'Ser', 'image_url': '/static/products/ser.svg'},
+    {'category': 'Podstawowe', 'name': 'Makaron', 'image_url': '/static/products/makaron.svg'},
+    {'category': 'Podstawowe', 'name': 'Ryż', 'image_url': '/static/products/ryz.svg'},
+    {'category': 'Podstawowe', 'name': 'Cukier', 'image_url': '/static/products/cukier.svg'},
+    {'category': 'Podstawowe', 'name': 'Kawa', 'image_url': '/static/products/kawa.svg'},
+    {'category': 'Podstawowe', 'name': 'Woda', 'image_url': '/static/products/woda.svg'},
+    {'category': 'Podstawowe', 'name': 'Mąka', 'image_url': '/static/products/maka.svg'},
+    {'category': 'Podstawowe', 'name': 'Sól', 'image_url': '/static/products/sol.svg'},
+    {'category': 'Warzywa', 'name': 'Ziemniaki', 'image_url': '/static/products/ziemniaki.svg'},
+    {'category': 'Warzywa', 'name': 'Marchew', 'image_url': '/static/products/marchew.svg'},
+    {'category': 'Warzywa', 'name': 'Cebula', 'image_url': '/static/products/cebula.svg'},
+    {'category': 'Warzywa', 'name': 'Czosnek', 'image_url': '/static/products/czosnek.svg'},
+    {'category': 'Warzywa', 'name': 'Pomidor', 'image_url': '/static/products/pomidor.svg'},
+    {'category': 'Warzywa', 'name': 'Ogórek', 'image_url': '/static/products/ogorek.svg'},
+    {'category': 'Warzywa', 'name': 'Papryka', 'image_url': '/static/products/papryka.svg'},
+    {'category': 'Warzywa', 'name': 'Sałata', 'image_url': '/static/products/saata.svg'},
+    {'category': 'Owoce', 'name': 'Jabłka', 'image_url': '/static/products/jabka.svg'},
+    {'category': 'Owoce', 'name': 'Banany', 'image_url': '/static/products/banany.svg'},
+    {'category': 'Owoce', 'name': 'Pomarańcze', 'image_url': '/static/products/pomarancze.svg'},
+    {'category': 'Owoce', 'name': 'Cytryny', 'image_url': '/static/products/cytryny.svg'},
+    {'category': 'Owoce', 'name': 'Winogrona', 'image_url': '/static/products/winogrona.svg'},
+    {'category': 'Owoce', 'name': 'Truskawki', 'image_url': '/static/products/truskawki.svg'},
+    {'category': 'Mięso i ryby', 'name': 'Kurczak', 'image_url': '/static/products/kurczak.svg'},
+    {'category': 'Mięso i ryby', 'name': 'Wołowina', 'image_url': '/static/products/woowina.svg'},
+    {'category': 'Mięso i ryby', 'name': 'Wieprzowina', 'image_url': '/static/products/wieprzowina.svg'},
+    {'category': 'Mięso i ryby', 'name': 'Mięso mielone', 'image_url': '/static/products/mieso-mielone.svg'},
+    {'category': 'Mięso i ryby', 'name': 'Szynka', 'image_url': '/static/products/szynka.svg'},
+    {'category': 'Nabiał', 'name': 'Jogurt', 'image_url': '/static/products/jogurt.svg'},
+    {'category': 'Nabiał', 'name': 'Kefir', 'image_url': '/static/products/kefir.svg'},
+    {'category': 'Nabiał', 'name': 'Twaróg', 'image_url': '/static/products/twarog.svg'},
+    {'category': 'Nabiał', 'name': 'Mozzarella', 'image_url': '/static/products/mozzarella.svg'},
+    {'category': 'Nabiał', 'name': 'Serek wiejski', 'image_url': '/static/products/serek-wiejski.svg'},
+    {'category': 'Nabiał', 'name': 'Serek kanapkowy', 'image_url': '/static/products/serek-kanapkowy.svg'},
+    {'category': 'Słodycze', 'name': 'Czekolada', 'image_url': '/static/products/czekolada.svg'},
+    {'category': 'Słodycze', 'name': 'Batoniki', 'image_url': '/static/products/batoniki.svg'},
+    {'category': 'Słodycze', 'name': 'Ciastka', 'image_url': '/static/products/ciastka.svg'},
+    {'category': 'Słodycze', 'name': 'Wafelki', 'image_url': '/static/products/wafelki.svg'},
+    {'category': 'Słodycze', 'name': 'Żelki', 'image_url': '/static/products/zelki.svg'},
+    {'category': 'Przekąski słone', 'name': 'Chipsy', 'image_url': '/static/products/chipsy.svg'},
+    {'category': 'Przekąski słone', 'name': 'Paluszki', 'image_url': '/static/products/paluszki.svg'},
+    {'category': 'Przekąski słone', 'name': 'Krakersy', 'image_url': '/static/products/krakersy.svg'},
+    {'category': 'Przekąski słone', 'name': 'Orzeszki', 'image_url': '/static/products/orzeszki.svg'},
+    {'category': 'Przekąski słone', 'name': 'Popcorn', 'image_url': '/static/products/popcorn.svg'},
+    {'category': 'Napoje', 'name': 'Sok jabłkowy', 'image_url': '/static/products/sok-jabkowy.svg'},
+    {'category': 'Napoje', 'name': 'Sok pomarańczowy', 'image_url': '/static/products/sok-pomaranczowy.svg'},
+    {'category': 'Napoje', 'name': 'Cola', 'image_url': '/static/products/cola.svg'},
+    {'category': 'Napoje', 'name': 'Napój gazowany', 'image_url': '/static/products/napoj-gazowany.svg'},
+    {'category': 'Napoje', 'name': 'Woda gazowana', 'image_url': '/static/products/woda-gazowana.svg'},
+    {'category': 'Mrożonki', 'name': 'Pizza mrożona', 'image_url': '/static/products/pizza-mrozona.svg'},
+    {'category': 'Mrożonki', 'name': 'Frytki', 'image_url': '/static/products/frytki.svg'},
+    {'category': 'Mrożonki', 'name': 'Warzywa mrożone', 'image_url': '/static/products/warzywa-mrozone.svg'},
+    {'category': 'Mrożonki', 'name': 'Owoce mrożone', 'image_url': '/static/products/owoce-mrozone.svg'},
+    {'category': 'Chemia i dom', 'name': 'Papier toaletowy', 'image_url': '/static/products/papier-toaletowy.svg'},
+    {'category': 'Chemia i dom', 'name': 'Ręcznik papierowy', 'image_url': '/static/products/recznik-papierowy.svg'},
+    {'category': 'Chemia i dom', 'name': 'Płyn do naczyń', 'image_url': '/static/products/pyn-do-naczyn.svg'},
+    {'category': 'Chemia i dom', 'name': 'Tabletki do zmywarki', 'image_url': '/static/products/tabletki-do-zmywarki.svg'}
 ]
-
 
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -133,6 +182,13 @@ def init_db() -> None:
                 FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
                 UNIQUE(product_id, home_id)
             );
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                body TEXT NOT NULL,
+                done INTEGER NOT NULL DEFAULT 0,
+                created_at INTEGER NOT NULL
+            );
             """
         )
         migrate_db(conn)
@@ -227,7 +283,15 @@ def api_state():
                 """
             )
         ]
-    return jsonify({"homes": homes, "products": products, "inventory": inventory, "shopping": shopping, "presets": PRESET_PRODUCTS})
+        notes = [
+            row_to_dict(r)
+            for r in conn.execute("SELECT * FROM notes ORDER BY done ASC, created_at DESC")
+        ]
+    categories = []
+    for item in PRESET_PRODUCTS:
+        if item["category"] not in categories:
+            categories.append(item["category"])
+    return jsonify({"homes": homes, "products": products, "inventory": inventory, "shopping": shopping, "notes": notes, "presets": PRESET_PRODUCTS, "preset_categories": categories})
 
 
 @app.post("/api/homes")
@@ -379,6 +443,31 @@ def shopping_delete(item_id: int):
 def shopping_clear_checked():
     with db() as conn:
         conn.execute("DELETE FROM shopping_list WHERE checked = 1")
+    return jsonify({"ok": True})
+
+
+@app.post("/api/notes")
+def notes_add():
+    data = request.get_json(silent=True) or {}
+    body = (data.get("body") or "").strip()
+    if not body:
+        return jsonify({"error": "Wpisz treść notatki."}), 400
+    with db() as conn:
+        conn.execute("INSERT INTO notes(body, done, created_at) VALUES(?, 0, ?)", (body, int(time.time())))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/notes/<int:note_id>/toggle")
+def notes_toggle(note_id: int):
+    with db() as conn:
+        conn.execute("UPDATE notes SET done = 1 - done WHERE id = ?", (note_id,))
+    return jsonify({"ok": True})
+
+
+@app.post("/api/notes/<int:note_id>/delete")
+def notes_delete(note_id: int):
+    with db() as conn:
+        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
     return jsonify({"ok": True})
 
 

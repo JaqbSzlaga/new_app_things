@@ -1,14 +1,12 @@
-const CACHE_NAME = 'grocery-pantry-v3-colorful';
+const CACHE_NAME = 'grocery-pantry-v5-fewer-products';
 const STATIC_ASSETS = [
   '/',
-  '/static/style.css?v=3',
+  '/static/style.css?v=5',
   '/manifest.webmanifest',
-  '/static/icons/icon-192.png',
-  '/static/icons/icon-512.png',
   '/static/products/mleko.svg',
   '/static/products/jajka.svg',
   '/static/products/chleb.svg',
-  '/static/products/maslo.svg',
+  '/static/products/maso.svg',
   '/static/products/ser.svg',
   '/static/products/makaron.svg',
   '/static/products/ryz.svg',
