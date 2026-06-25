@@ -1,17 +1,14 @@
 services:
   - type: web
-    name: domowa-spizarnia
-    env: python
+    name: grocery-home-app
+    runtime: python
+    plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app
+    startCommand: gunicorn --bind 0.0.0.0:$PORT app:app
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
       - key: SECRET_KEY
         generateValue: true
-      - key: DATA_DIR
-        value: /var/data
-    disk:
-      name: domowa-spizarnia-data
-      mountPath: /var/data
-      sizeGB: 1
+      - key: DATABASE_URL
+        sync: false

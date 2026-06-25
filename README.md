@@ -61,3 +61,14 @@ Dla trwałej bazy SQLite i uploadowanych zdjęć dodaj w Renderze persistent dis
 - Cały widok dodawania produktów przepisany od zera.
 - Usunięte stare klasy kafelków z pickera.
 - Nowy picker to prosta lista: checkbox, zdjęcie, nazwa, kategoria.
+
+## Darmowy zapis danych przez PostgreSQL
+Ta wersja zapisuje domy, produkty, liczniki, listę zakupów i notatki w PostgreSQL, jeśli ustawisz zmienną środowiskową `DATABASE_URL`.
+
+Na Renderze ustaw:
+
+```text
+DATABASE_URL=postgresql://...
+```
+
+Bez `DATABASE_URL` aplikacja działa lokalnie na SQLite.

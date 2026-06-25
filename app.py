@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import time
@@ -7,13 +8,22 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask import Flask, jsonify, redirect, render_template, request, send_file, send_from_directory, url_for
 from werkzeug.utils import secure_filename
+
+try:
+    import psycopg2
+    from psycopg2.extras import RealDictCursor
+except Exception:  # local SQLite mode can work without psycopg2
+    psycopg2 = None
+    RealDictCursor = None
 
 BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = Path(os.environ.get("DATA_DIR", BASE_DIR / "data"))
 UPLOAD_DIR = DATA_DIR / "uploads"
 DB_PATH = DATA_DIR / "pantry.db"
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+USE_POSTGRES = bool(DATABASE_URL and DATABASE_URL.startswith(("postgres://", "postgresql://")))
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "gif"}
 
 app = Flask(__name__)
@@ -83,12 +93,17 @@ PRESET_PRODUCTS = [
     {'category': 'Chemia i dom', 'name': 'Tabletki do zmywarki', 'image_url': '/static/products/tabletki-do-zmywarki.svg'}
 ]
 
+
 def ensure_dirs() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def db() -> sqlite3.Connection:
+def connect():
+    if USE_POSTGRES:
+        if psycopg2 is None:
+            raise RuntimeError("Brakuje psycopg2-binary. Sprawdź requirements.txt.")
+        return psycopg2.connect(DATABASE_URL, sslmode="require", cursor_factory=RealDictCursor)
     ensure_dirs()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -96,120 +111,186 @@ def db() -> sqlite3.Connection:
     return conn
 
 
-def column_exists(conn: sqlite3.Connection, table: str, column: str) -> bool:
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    return any(row["name"] == column for row in rows)
+def sql_params(sql: str) -> str:
+    if USE_POSTGRES:
+        return sql.replace("?", "%s").replace("COLLATE NOCASE", "")
+    return sql
 
 
-def table_sql(conn: sqlite3.Connection, table: str) -> str:
-    row = conn.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()
-    return row["sql"] if row and row["sql"] else ""
+def fetch_all(conn, sql: str, params: tuple = ()) -> list[dict[str, Any]]:
+    cur = conn.cursor()
+    cur.execute(sql_params(sql), params)
+    rows = cur.fetchall()
+    return [dict(r) for r in rows]
 
 
-def migrate_db(conn: sqlite3.Connection) -> None:
-    if not column_exists(conn, "products", "image_url"):
-        conn.execute("ALTER TABLE products ADD COLUMN image_url TEXT")
+def fetch_one(conn, sql: str, params: tuple = ()) -> dict[str, Any] | None:
+    cur = conn.cursor()
+    cur.execute(sql_params(sql), params)
+    row = cur.fetchone()
+    return dict(row) if row else None
 
-    sql = table_sql(conn, "shopping_list")
-    needs_shopping_migration = "product_id INTEGER NOT NULL UNIQUE" in sql or not column_exists(conn, "shopping_list", "home_id")
-    if needs_shopping_migration:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS shopping_list_new (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_id INTEGER NOT NULL,
-                home_id INTEGER NOT NULL,
-                wanted_quantity INTEGER NOT NULL DEFAULT 1 CHECK(wanted_quantity >= 1),
-                checked INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
-                FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
-                UNIQUE(product_id, home_id)
-            );
-            """
-        )
-        old_rows = conn.execute("SELECT * FROM shopping_list").fetchall()
-        first_home = conn.execute("SELECT id FROM homes ORDER BY id LIMIT 1").fetchone()
-        first_home_id = first_home["id"] if first_home else None
-        for row in old_rows:
-            conn.execute(
-                """
-                INSERT OR IGNORE INTO shopping_list_new(product_id, home_id, wanted_quantity, checked, created_at)
-                VALUES(?, ?, ?, ?, ?)
-                """,
-                (row["product_id"], first_home_id, row["wanted_quantity"], row["checked"], row["created_at"]),
-            )
-        conn.execute("DROP TABLE shopping_list")
-        conn.execute("ALTER TABLE shopping_list_new RENAME TO shopping_list")
+
+def run(conn, sql: str, params: tuple = ()) -> None:
+    cur = conn.cursor()
+    cur.execute(sql_params(sql), params)
+
+
+def run_many(conn, sql: str, params_list: list[tuple]) -> None:
+    cur = conn.cursor()
+    cur.executemany(sql_params(sql), params_list)
+
+
+def insert_and_get_id(conn, sql: str, params: tuple = ()) -> int:
+    cur = conn.cursor()
+    if USE_POSTGRES:
+        cur.execute(sql_params(sql + " RETURNING id"), params)
+        return int(cur.fetchone()["id"])
+    cur.execute(sql, params)
+    return int(cur.lastrowid)
+
+
+def commit_or_rollback(conn, ok: bool) -> None:
+    try:
+        if ok:
+            conn.commit()
+        else:
+            conn.rollback()
+    finally:
+        conn.close()
 
 
 def init_db() -> None:
-    with db() as conn:
-        conn.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS homes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS products (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                name TEXT NOT NULL UNIQUE,
-                image_filename TEXT,
-                image_url TEXT,
-                created_at INTEGER NOT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS inventory (
-                home_id INTEGER NOT NULL,
-                product_id INTEGER NOT NULL,
-                quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
-                updated_at INTEGER NOT NULL,
-                PRIMARY KEY(home_id, product_id),
-                FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
-                FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
-            );
-
-            CREATE TABLE IF NOT EXISTS shopping_list (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                product_id INTEGER NOT NULL,
-                home_id INTEGER NOT NULL,
-                wanted_quantity INTEGER NOT NULL DEFAULT 1 CHECK(wanted_quantity >= 1),
-                checked INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL,
-                FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
-                FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
-                UNIQUE(product_id, home_id)
-            );
-
-            CREATE TABLE IF NOT EXISTS notes (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                body TEXT NOT NULL,
-                done INTEGER NOT NULL DEFAULT 0,
-                created_at INTEGER NOT NULL
-            );
-            """
-        )
-        migrate_db(conn)
-        count = conn.execute("SELECT COUNT(*) AS c FROM homes").fetchone()["c"]
+    conn = connect()
+    ok = False
+    try:
+        cur = conn.cursor()
+        if USE_POSTGRES:
+            statements = [
+                """
+                CREATE TABLE IF NOT EXISTS homes (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS products (
+                    id SERIAL PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    image_filename TEXT,
+                    image_url TEXT,
+                    image_mime TEXT,
+                    image_data BYTEA,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS inventory (
+                    home_id INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY(home_id, product_id)
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS shopping_list (
+                    id SERIAL PRIMARY KEY,
+                    product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+                    home_id INTEGER NOT NULL REFERENCES homes(id) ON DELETE CASCADE,
+                    wanted_quantity INTEGER NOT NULL DEFAULT 1 CHECK(wanted_quantity >= 1),
+                    checked INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    UNIQUE(product_id, home_id)
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS notes (
+                    id SERIAL PRIMARY KEY,
+                    body TEXT NOT NULL,
+                    done INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+            ]
+        else:
+            statements = [
+                """
+                CREATE TABLE IF NOT EXISTS homes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS products (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL UNIQUE,
+                    image_filename TEXT,
+                    image_url TEXT,
+                    image_mime TEXT,
+                    image_data BLOB,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS inventory (
+                    home_id INTEGER NOT NULL,
+                    product_id INTEGER NOT NULL,
+                    quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY(home_id, product_id),
+                    FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS shopping_list (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id INTEGER NOT NULL,
+                    home_id INTEGER NOT NULL,
+                    wanted_quantity INTEGER NOT NULL DEFAULT 1 CHECK(wanted_quantity >= 1),
+                    checked INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL,
+                    FOREIGN KEY(product_id) REFERENCES products(id) ON DELETE CASCADE,
+                    FOREIGN KEY(home_id) REFERENCES homes(id) ON DELETE CASCADE,
+                    UNIQUE(product_id, home_id)
+                )
+                """,
+                """
+                CREATE TABLE IF NOT EXISTS notes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    body TEXT NOT NULL,
+                    done INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                )
+                """,
+            ]
+        for statement in statements:
+            cur.execute(statement)
+        count = fetch_one(conn, "SELECT COUNT(*) AS c FROM homes")["c"]
         if count == 0:
             now = int(time.time())
-            conn.executemany(
-                "INSERT INTO homes(name, created_at) VALUES(?, ?)",
-                [("Dom 1", now), ("Dom 2", now)],
-            )
-
-
-def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
-    return dict(row)
+            run_many(conn, "INSERT INTO homes(name, created_at) VALUES(?, ?)", [("Dom 1", now), ("Dom 2", now)])
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
 
 
 def allowed_file(filename: str) -> bool:
     return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
 
 
-def save_image(file) -> str | None:
+def read_image_upload(file) -> tuple[str | None, bytes | None]:
+    if not file or not file.filename:
+        return None, None
+    if not allowed_file(file.filename):
+        raise ValueError("Dozwolone formaty zdjęć: png, jpg, jpeg, webp, gif.")
+    return file.mimetype or "application/octet-stream", file.read()
+
+
+def save_image_to_file(file) -> str | None:
     if not file or not file.filename:
         return None
     if not allowed_file(file.filename):
@@ -227,6 +308,14 @@ def valid_preset_url(url: str | None) -> str | None:
     return url if any(item["image_url"] == url for item in PRESET_PRODUCTS) else None
 
 
+def decorate_products(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for row in rows:
+        if row.get("image_mime"):
+            row["image_url"] = url_for("product_db_image", product_id=row["id"])
+        row.pop("image_data", None)
+    return rows
+
+
 @app.before_request
 def _init() -> None:
     init_db()
@@ -242,6 +331,22 @@ def uploaded_file(filename: str):
     return send_from_directory(UPLOAD_DIR, filename)
 
 
+@app.get("/api/products/<int:product_id>/image")
+def product_db_image(product_id: int):
+    conn = connect()
+    try:
+        row = fetch_one(conn, "SELECT image_mime, image_data FROM products WHERE id = ?", (product_id,))
+    finally:
+        conn.close()
+    if not row or not row.get("image_data"):
+        return "", 404
+    from io import BytesIO
+    data = row["image_data"]
+    if isinstance(data, memoryview):
+        data = data.tobytes()
+    return send_file(BytesIO(data), mimetype=row.get("image_mime") or "application/octet-stream")
+
+
 @app.get("/manifest.webmanifest")
 def manifest():
     return send_from_directory(BASE_DIR / "static", "manifest.webmanifest")
@@ -254,39 +359,29 @@ def service_worker():
 
 @app.get("/api/state")
 def api_state():
-    with db() as conn:
-        homes = [row_to_dict(r) for r in conn.execute("SELECT * FROM homes ORDER BY id")]
-        products = [row_to_dict(r) for r in conn.execute("SELECT * FROM products ORDER BY name COLLATE NOCASE")]
-        inventory = [
-            row_to_dict(r)
-            for r in conn.execute(
-                """
-                SELECT h.id AS home_id, p.id AS product_id, COALESCE(i.quantity, 0) AS quantity
-                FROM homes h
-                CROSS JOIN products p
-                LEFT JOIN inventory i ON i.home_id = h.id AND i.product_id = p.id
-                ORDER BY h.id, p.name COLLATE NOCASE
-                """
-            )
-        ]
-        shopping = [
-            row_to_dict(r)
-            for r in conn.execute(
-                """
-                SELECT s.id, s.product_id, s.home_id, s.wanted_quantity, s.checked,
-                       p.name, p.image_filename, p.image_url,
-                       COALESCE(h.name, 'Ogólne') AS home_name
-                FROM shopping_list s
-                JOIN products p ON p.id = s.product_id
-                LEFT JOIN homes h ON h.id = s.home_id
-                ORDER BY s.checked ASC, h.name COLLATE NOCASE, p.name COLLATE NOCASE
-                """
-            )
-        ]
-        notes = [
-            row_to_dict(r)
-            for r in conn.execute("SELECT * FROM notes ORDER BY done ASC, created_at DESC")
-        ]
+    conn = connect()
+    try:
+        homes = fetch_all(conn, "SELECT * FROM homes ORDER BY id")
+        products = decorate_products(fetch_all(conn, "SELECT id, name, image_filename, image_url, image_mime, created_at FROM products ORDER BY name COLLATE NOCASE"))
+        inventory = fetch_all(conn, """
+            SELECT h.id AS home_id, p.id AS product_id, COALESCE(i.quantity, 0) AS quantity
+            FROM homes h
+            CROSS JOIN products p
+            LEFT JOIN inventory i ON i.home_id = h.id AND i.product_id = p.id
+            ORDER BY h.id, p.name COLLATE NOCASE
+        """)
+        shopping = decorate_products(fetch_all(conn, """
+            SELECT s.id, s.product_id AS id, s.product_id, s.home_id, s.wanted_quantity, s.checked,
+                   p.name, p.image_filename, p.image_url, p.image_mime,
+                   COALESCE(h.name, 'Ogólne') AS home_name
+            FROM shopping_list s
+            JOIN products p ON p.id = s.product_id
+            LEFT JOIN homes h ON h.id = s.home_id
+            ORDER BY s.checked ASC, h.name COLLATE NOCASE, p.name COLLATE NOCASE
+        """))
+        notes = fetch_all(conn, "SELECT * FROM notes ORDER BY done ASC, created_at DESC")
+    finally:
+        conn.close()
     categories = []
     for item in PRESET_PRODUCTS:
         if item["category"] not in categories:
@@ -299,11 +394,15 @@ def add_home():
     name = (request.form.get("name") or "").strip()
     if not name:
         return jsonify({"error": "Podaj nazwę domu."}), 400
+    conn = connect()
+    ok = False
     try:
-        with db() as conn:
-            conn.execute("INSERT INTO homes(name, created_at) VALUES(?, ?)", (name, int(time.time())))
-    except sqlite3.IntegrityError:
+        run(conn, "INSERT INTO homes(name, created_at) VALUES(?, ?)", (name, int(time.time())))
+        ok = True
+    except Exception:
         return jsonify({"error": "Taki dom już istnieje."}), 400
+    finally:
+        commit_or_rollback(conn, ok)
     return redirect(url_for("index"))
 
 
@@ -313,28 +412,33 @@ def add_product():
     preset_url = valid_preset_url(request.form.get("preset_image_url"))
     if not name:
         return jsonify({"error": "Podaj nazwę produktu."}), 400
+    conn = connect()
+    ok = False
     try:
-        image_filename = save_image(request.files.get("image"))
-        image_url = None if image_filename else preset_url
-        with db() as conn:
-            cur = conn.execute(
-                "INSERT INTO products(name, image_filename, image_url, created_at) VALUES(?, ?, ?, ?)",
-                (name, image_filename, image_url, int(time.time())),
-            )
-            product_id = cur.lastrowid
-            for home in conn.execute("SELECT id FROM homes"):
-                qty = int(request.form.get(f"qty_home_{home['id']}") or 0)
-                conn.execute(
-                    "INSERT INTO inventory(home_id, product_id, quantity, updated_at) VALUES(?, ?, ?, ?)",
-                    (home["id"], product_id, max(0, qty), int(time.time())),
-                )
+        image_file = request.files.get("image")
+        image_filename = None
+        image_mime = None
+        image_data = None
+        if USE_POSTGRES:
+            image_mime, image_data = read_image_upload(image_file)
+        else:
+            image_filename = save_image_to_file(image_file)
+        image_url = None if (image_filename or image_data) else preset_url
+        product_id = insert_and_get_id(conn,
+            "INSERT INTO products(name, image_filename, image_url, image_mime, image_data, created_at) VALUES(?, ?, ?, ?, ?, ?)",
+            (name, image_filename, image_url, image_mime, image_data, int(time.time())),
+        )
+        for home in fetch_all(conn, "SELECT id FROM homes"):
+            qty = int(request.form.get(f"qty_home_{home['id']}") or 0)
+            run(conn, "INSERT INTO inventory(home_id, product_id, quantity, updated_at) VALUES(?, ?, ?, ?)", (home["id"], product_id, max(0, qty), int(time.time())))
+        ok = True
     except ValueError as exc:
         return jsonify({"error": str(exc)}), 400
-    except sqlite3.IntegrityError:
-        return jsonify({"error": "Taki produkt już istnieje."}), 400
+    except Exception:
+        return jsonify({"error": "Taki produkt już istnieje albo wystąpił błąd bazy."}), 400
+    finally:
+        commit_or_rollback(conn, ok)
     return redirect(url_for("index"))
-
-
 
 
 @app.post("/api/products/bulk")
@@ -342,55 +446,55 @@ def add_products_bulk():
     data = request.get_json(force=True) or {}
     products = data.get("products") or []
     qty_by_home = data.get("qty_by_home") or {}
-
     if not products:
         return jsonify({"error": "Nie wybrano produktów."}), 400
-
+    conn = connect()
+    ok = False
     created = 0
-    with db() as conn:
-        homes = [row["id"] for row in conn.execute("SELECT id FROM homes")]
+    try:
+        homes = [row["id"] for row in fetch_all(conn, "SELECT id FROM homes")]
         for item in products:
             name = (item.get("name") or "").strip()
             if not name:
                 continue
             image_url = valid_preset_url(item.get("image_url"))
-            existing = conn.execute("SELECT id FROM products WHERE lower(name) = lower(?)", (name,)).fetchone()
+            existing = fetch_one(conn, "SELECT id FROM products WHERE lower(name) = lower(?)", (name,))
             if existing:
                 product_id = existing["id"]
                 if image_url:
-                    conn.execute("UPDATE products SET image_url = COALESCE(image_url, ?), image_filename = image_filename WHERE id = ?", (image_url, product_id))
+                    run(conn, "UPDATE products SET image_url = COALESCE(image_url, ?) WHERE id = ?", (image_url, product_id))
             else:
-                cur = conn.execute(
-                    "INSERT INTO products(name, image_filename, image_url, created_at) VALUES(?, NULL, ?, ?)",
-                    (name, image_url, int(time.time())),
-                )
-                product_id = cur.lastrowid
+                product_id = insert_and_get_id(conn, "INSERT INTO products(name, image_filename, image_url, image_mime, image_data, created_at) VALUES(?, NULL, ?, NULL, NULL, ?)", (name, image_url, int(time.time())))
                 created += 1
-
             for home_id in homes:
                 try:
                     qty = int(qty_by_home.get(str(home_id), qty_by_home.get(home_id, 0)) or 0)
                 except (TypeError, ValueError):
                     qty = 0
-                conn.execute(
-                    """
+                run(conn, """
                     INSERT INTO inventory(home_id, product_id, quantity, updated_at)
                     VALUES(?, ?, ?, ?)
                     ON CONFLICT(home_id, product_id)
                     DO UPDATE SET quantity = excluded.quantity, updated_at = excluded.updated_at
-                    """,
-                    (home_id, product_id, max(0, qty), int(time.time())),
-                )
-
+                """, (home_id, product_id, max(0, qty), int(time.time())))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True, "created": created})
 
 
 @app.post("/api/products/<int:product_id>/delete")
 def delete_product(product_id: int):
-    with db() as conn:
-        row = conn.execute("SELECT image_filename FROM products WHERE id = ?", (product_id,)).fetchone()
-        conn.execute("DELETE FROM products WHERE id = ?", (product_id,))
-    if row and row["image_filename"]:
+    conn = connect()
+    ok = False
+    row = None
+    try:
+        row = fetch_one(conn, "SELECT image_filename FROM products WHERE id = ?", (product_id,))
+        run(conn, "DELETE FROM products WHERE id = ?", (product_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
+    if row and row.get("image_filename"):
         try:
             (UPLOAD_DIR / row["image_filename"]).unlink(missing_ok=True)
         except OSError:
@@ -400,21 +504,23 @@ def delete_product(product_id: int):
 
 @app.post("/api/homes/<int:home_id>/delete")
 def delete_home(home_id: int):
-    with db() as conn:
-        conn.execute("DELETE FROM homes WHERE id = ?", (home_id,))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "DELETE FROM homes WHERE id = ?", (home_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
-def add_shopping_item(conn: sqlite3.Connection, product_id: int, home_id: int | None, amount: int = 1) -> None:
-    conn.execute(
-        """
+def add_shopping_item(conn, product_id: int, home_id: int | None, amount: int = 1) -> None:
+    run(conn, """
         INSERT INTO shopping_list(product_id, home_id, wanted_quantity, checked, created_at)
         VALUES(?, ?, ?, 0, ?)
         ON CONFLICT(product_id, home_id)
         DO UPDATE SET wanted_quantity = shopping_list.wanted_quantity + excluded.wanted_quantity, checked = 0
-        """,
-        (product_id, home_id, max(1, amount), int(time.time())),
-    )
+    """, (product_id, home_id, max(1, amount), int(time.time())))
 
 
 @app.post("/api/inventory/change")
@@ -424,25 +530,23 @@ def change_inventory():
     product_id = int(data.get("product_id"))
     delta = int(data.get("delta"))
     add_to_shopping = bool(data.get("add_to_shopping", False))
-
-    with db() as conn:
-        current = conn.execute(
-            "SELECT quantity FROM inventory WHERE home_id = ? AND product_id = ?",
-            (home_id, product_id),
-        ).fetchone()
+    conn = connect()
+    ok = False
+    try:
+        current = fetch_one(conn, "SELECT quantity FROM inventory WHERE home_id = ? AND product_id = ?", (home_id, product_id))
         quantity = current["quantity"] if current else 0
         new_quantity = max(0, quantity + delta)
-        conn.execute(
-            """
+        run(conn, """
             INSERT INTO inventory(home_id, product_id, quantity, updated_at)
             VALUES(?, ?, ?, ?)
             ON CONFLICT(home_id, product_id)
             DO UPDATE SET quantity = excluded.quantity, updated_at = excluded.updated_at
-            """,
-            (home_id, product_id, new_quantity, int(time.time())),
-        )
+        """, (home_id, product_id, new_quantity, int(time.time())))
         if add_to_shopping:
             add_shopping_item(conn, product_id, home_id, 1)
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True, "quantity": new_quantity})
 
 
@@ -453,9 +557,13 @@ def shopping_add():
     home_id = data.get("home_id")
     if home_id in (None, "", "null"):
         return jsonify({"error": "Wybierz dom dla pozycji zakupowej."}), 400
-    home_id = int(home_id)
-    with db() as conn:
-        add_shopping_item(conn, product_id, home_id, 1)
+    conn = connect()
+    ok = False
+    try:
+        add_shopping_item(conn, product_id, int(home_id), 1)
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
@@ -463,36 +571,56 @@ def shopping_add():
 def shopping_change(item_id: int):
     data = request.get_json(force=True)
     delta = int(data.get("delta"))
-    with db() as conn:
-        row = conn.execute("SELECT wanted_quantity FROM shopping_list WHERE id = ?", (item_id,)).fetchone()
+    conn = connect()
+    ok = False
+    try:
+        row = fetch_one(conn, "SELECT wanted_quantity FROM shopping_list WHERE id = ?", (item_id,))
         if not row:
             return jsonify({"error": "Nie znaleziono pozycji."}), 404
         qty = row["wanted_quantity"] + delta
         if qty <= 0:
-            conn.execute("DELETE FROM shopping_list WHERE id = ?", (item_id,))
+            run(conn, "DELETE FROM shopping_list WHERE id = ?", (item_id,))
         else:
-            conn.execute("UPDATE shopping_list SET wanted_quantity = ? WHERE id = ?", (qty, item_id))
+            run(conn, "UPDATE shopping_list SET wanted_quantity = ? WHERE id = ?", (qty, item_id))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
 @app.post("/api/shopping/<int:item_id>/toggle")
 def shopping_toggle(item_id: int):
-    with db() as conn:
-        conn.execute("UPDATE shopping_list SET checked = 1 - checked WHERE id = ?", (item_id,))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "UPDATE shopping_list SET checked = 1 - checked WHERE id = ?", (item_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
 @app.post("/api/shopping/<int:item_id>/delete")
 def shopping_delete(item_id: int):
-    with db() as conn:
-        conn.execute("DELETE FROM shopping_list WHERE id = ?", (item_id,))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "DELETE FROM shopping_list WHERE id = ?", (item_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
 @app.post("/api/shopping/clear_checked")
 def shopping_clear_checked():
-    with db() as conn:
-        conn.execute("DELETE FROM shopping_list WHERE checked = 1")
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "DELETE FROM shopping_list WHERE checked = 1")
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
@@ -502,22 +630,37 @@ def notes_add():
     body = (data.get("body") or "").strip()
     if not body:
         return jsonify({"error": "Wpisz treść notatki."}), 400
-    with db() as conn:
-        conn.execute("INSERT INTO notes(body, done, created_at) VALUES(?, 0, ?)", (body, int(time.time())))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "INSERT INTO notes(body, done, created_at) VALUES(?, 0, ?)", (body, int(time.time())))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
 @app.post("/api/notes/<int:note_id>/toggle")
 def notes_toggle(note_id: int):
-    with db() as conn:
-        conn.execute("UPDATE notes SET done = 1 - done WHERE id = ?", (note_id,))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "UPDATE notes SET done = 1 - done WHERE id = ?", (note_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
 @app.post("/api/notes/<int:note_id>/delete")
 def notes_delete(note_id: int):
-    with db() as conn:
-        conn.execute("DELETE FROM notes WHERE id = ?", (note_id,))
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "DELETE FROM notes WHERE id = ?", (note_id,))
+        ok = True
+    finally:
+        commit_or_rollback(conn, ok)
     return jsonify({"ok": True})
 
 
