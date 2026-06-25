@@ -502,6 +502,23 @@ def delete_product(product_id: int):
     return jsonify({"ok": True})
 
 
+
+
+@app.post("/api/homes/<int:home_id>/rename")
+def rename_home(home_id: int):
+    data = request.get_json(force=True)
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Nazwa domu nie może być pusta."}), 400
+    conn = connect()
+    ok = False
+    try:
+        run(conn, "UPDATE homes SET name = ? WHERE id = ?", (name, home_id))
+        ok = True
+        return jsonify({"ok": True})
+    finally:
+        commit_or_rollback(conn, ok)
+
 @app.post("/api/homes/<int:home_id>/delete")
 def delete_home(home_id: int):
     conn = connect()

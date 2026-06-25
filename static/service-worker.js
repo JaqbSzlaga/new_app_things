@@ -1,7 +1,7 @@
-const CACHE_NAME = 'grocery-pantry-v9-clean-picker';
+const CACHE_NAME = 'grocery-pantry-v11-homes-big-picker';
 const STATIC_ASSETS = [
   '/',
-  '/static/style.css?v=9',
+  '/static/style.css?v=11',
   '/manifest.webmanifest',
   '/static/products/mleko.svg',
   '/static/products/jajka.svg',

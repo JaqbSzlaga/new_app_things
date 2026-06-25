@@ -72,3 +72,9 @@ DATABASE_URL=postgresql://...
 ```
 
 Bez `DATABASE_URL` aplikacja działa lokalnie na SQLite.
+
+
+## v9
+- Dodano ekran Domy: edycja nazw i usuwanie domów.
+- Powiększono widok dodawania produktów na telefonie.
+- Picker produktów jest teraz dużą listą ze zdjęciami, checkboxem, nazwą i kategorią.

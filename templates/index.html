@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=9">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -63,13 +63,24 @@
         </form>
         <div id="notes" class="notes-list"></div>
       </section>
+
+      <section id="homesPanel" class="screen">
+        <div class="shopping-head">
+          <div>
+            <h2>Domy</h2>
+            <p>Edytuj nazwy domów albo usuń dom, którego już nie używasz.</p>
+          </div>
+          <button class="small-clean" onclick="openDialog('homeDialog')">+ Dodaj</button>
+        </div>
+        <div id="homesManageList" class="homes-manage-list"></div>
+      </section>
     </main>
 
     <nav class="bottom-nav" aria-label="Nawigacja">
       <button class="nav-item active" data-tab="pantry" onclick="setTab('pantry')"><span>⌂</span>Spiżarnia</button>
       <button class="nav-item" data-tab="shopping" onclick="setTab('shopping')"><span>🛍️<b id="navBadge">0</b></span>Zakupy</button>
       <button class="fab" onclick="openDialog('productDialog')" aria-label="Dodaj produkt">+</button>
-      <button class="nav-item" onclick="openDialog('homeDialog')"><span>⌂</span>Domy</button>
+      <button class="nav-item" data-tab="homes" onclick="setTab('homes')"><span>⌂</span>Domy</button>
       <button class="nav-item" data-tab="notes" onclick="setTab('notes')"><span>✎</span>Notatki</button>
     </nav>
   </div>
@@ -86,12 +97,12 @@
     </form>
   </dialog>
 
-  <dialog id="productDialog" class="add-products-dialog">
+    <dialog id="productDialog" class="add-products-dialog">
     <form method="post" action="/api/products" enctype="multipart/form-data" id="productForm" class="add-products-sheet">
       <div class="add-sheet-head">
         <div>
           <h3>Dodaj produkty</h3>
-          <p>Zaznacz kilka produktów z listy albo dodaj własny.</p>
+          <p>Zaznacz produkty z dużej listy albo wpisz własny.</p>
         </div>
         <button type="button" class="sheet-close" onclick="closeDialog('productDialog')" aria-label="Zamknij">✕</button>
       </div>
@@ -102,25 +113,26 @@
 
       <label class="picker-search">
         <span>⌕</span>
-        <input id="presetSearchBox" type="text" placeholder="Szukaj produktu..." oninput="buildPresetGrid()">
+        <input id="presetSearchBox" type="text" placeholder="Szukaj produktu, np. mleko, krakersy..." oninput="buildPresetGrid()">
       </label>
 
       <div id="presetCategories" class="picker-categories"></div>
-
       <div id="presetGrid" class="picker-list"></div>
 
-      <div class="picker-selected" id="selectedInfo">Nie wybrano gotowych produktów.</div>
+      <div class="picker-bottom">
+        <div class="picker-selected" id="selectedInfo">Nie wybrano gotowych produktów.</div>
 
-      <details class="custom-photo-box">
-        <summary>Własne zdjęcie produktu</summary>
-        <input type="file" name="image" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" onchange="clearPresetSelection()">
-      </details>
+        <details class="custom-photo-box">
+          <summary>Własne zdjęcie produktu</summary>
+          <input type="file" name="image" id="imageInput" accept="image/png,image/jpeg,image/webp,image/gif" onchange="clearPresetSelection()">
+        </details>
 
-      <div id="initialQuantities" class="picker-qty"></div>
+        <div id="initialQuantities" class="picker-qty"></div>
 
-      <div class="sheet-actions">
-        <button type="button" class="cancel-btn" onclick="closeDialog('productDialog')">Anuluj</button>
-        <button class="add-btn" type="submit" id="productSubmitBtn">Dodaj produkt</button>
+        <div class="sheet-actions">
+          <button type="button" class="cancel-btn" onclick="closeDialog('productDialog')">Anuluj</button>
+          <button class="add-btn" type="submit" id="productSubmitBtn">Dodaj produkt</button>
+        </div>
       </div>
     </form>
   </dialog>
@@ -159,6 +171,7 @@
       document.getElementById('pantryPanel').classList.toggle('active-screen', tab === 'pantry');
       document.getElementById('shoppingPanel').classList.toggle('active-screen', tab === 'shopping');
       document.getElementById('notesPanel').classList.toggle('active-screen', tab === 'notes');
+      document.getElementById('homesPanel').classList.toggle('active-screen', tab === 'homes');
     }
 
     async function loadState() {
@@ -170,6 +183,7 @@
       renderPantry();
       renderShopping();
       renderNotes();
+      renderHomesManage();
       updateBadges();
     }
 
@@ -211,6 +225,7 @@
       catBox.innerHTML = cats.map(cat => `
         <button type="button" class="category-pill ${activePresetCategory === cat ? 'active' : ''}" onclick="selectPresetCategory('${jsText(cat)}')">${safe(cat)}</button>
       `).join('');
+
       const searchTerm = (document.getElementById('presetSearchBox')?.value || '').trim().toLowerCase();
       const items = (activePresetCategory === 'Wszystkie'
         ? state.presets
@@ -219,7 +234,7 @@
 
       const box = document.getElementById('presetGrid');
       if (!items.length) {
-        box.innerHTML = '<div class="picker-empty">Brak produktów w tej kategorii.</div>';
+        box.innerHTML = '<div class="picker-empty">Brak produktów w tej kategorii lub dla tego wyszukiwania.</div>';
         return;
       }
 
@@ -392,6 +407,44 @@
           <button class="delete-link" onclick="deleteNote(${note.id})">Usuń</button>
         </article>
       `).join('');
+    }
+
+
+    function renderHomesManage() {
+      const root = document.getElementById('homesManageList');
+      if (!root) return;
+      if (!state.homes.length) {
+        root.innerHTML = '<p class="empty-note">Nie ma jeszcze domów. Dodaj pierwszy dom.</p>';
+        return;
+      }
+      root.innerHTML = state.homes.map(home => `
+        <article class="home-manage-card">
+          <div class="home-manage-icon">⌂</div>
+          <div class="home-manage-main">
+            <label for="homeName_${home.id}">Nazwa domu</label>
+            <input id="homeName_${home.id}" value="${safe(home.name)}" maxlength="60">
+          </div>
+          <div class="home-manage-actions">
+            <button class="save-home-btn" onclick="renameHome(${home.id})">Zapisz</button>
+            <button class="delete-home-btn" onclick="deleteHome(${home.id}, '${jsText(home.name)}')">Usuń</button>
+          </div>
+        </article>
+      `).join('');
+    }
+
+    async function renameHome(homeId) {
+      const input = document.getElementById(`homeName_${homeId}`);
+      const name = input.value.trim();
+      if (!name) {
+        alert('Nazwa domu nie może być pusta.');
+        return;
+      }
+      await fetch(`/api/homes/${homeId}/rename`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name })
+      });
+      await loadState();
     }
 
     async function addNote(event) {
