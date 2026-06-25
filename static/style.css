@@ -779,3 +779,14 @@ dialog::backdrop { background: rgba(57, 29, 14, .36); backdrop-filter: blur(6px)
     border-radius: 30px !important;
   }
 }
+
+
+/* v10: łatwiejsze odhaczanie listy zakupów */
+.shopping-item .check {
+  width: 34px !important;
+  height: 34px !important;
+  border-radius: 12px !important;
+  font-size: 1rem !important;
+  display: grid !important;
+  place-items: center !important;
+}

@@ -311,7 +311,9 @@ def valid_preset_url(url: str | None) -> str | None:
 def decorate_products(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for row in rows:
         if row.get("image_mime"):
-            row["image_url"] = url_for("product_db_image", product_id=row["id"])
+            # On shopping rows, row["id"] is the shopping-list id, so use product_id for image route.
+            image_product_id = row.get("product_id") or row.get("id")
+            row["image_url"] = url_for("product_db_image", product_id=image_product_id)
         row.pop("image_data", None)
     return rows
 
@@ -371,7 +373,7 @@ def api_state():
             ORDER BY h.id, p.name COLLATE NOCASE
         """)
         shopping = decorate_products(fetch_all(conn, """
-            SELECT s.id, s.product_id AS id, s.product_id, s.home_id, s.wanted_quantity, s.checked,
+            SELECT s.id, s.product_id, s.home_id, s.wanted_quantity, s.checked,
                    p.name, p.image_filename, p.image_url, p.image_mime,
                    COALESCE(h.name, 'Ogólne') AS home_name
             FROM shopping_list s
@@ -610,7 +612,11 @@ def shopping_toggle(item_id: int):
     conn = connect()
     ok = False
     try:
-        run(conn, "UPDATE shopping_list SET checked = 1 - checked WHERE id = ?", (item_id,))
+        row = fetch_one(conn, "SELECT checked FROM shopping_list WHERE id = ?", (item_id,))
+        if not row:
+            return jsonify({"ok": False, "error": "Nie znaleziono pozycji na liście zakupów."}), 404
+        new_checked = 0 if int(row.get("checked") or 0) else 1
+        run(conn, "UPDATE shopping_list SET checked = ? WHERE id = ?", (new_checked, item_id))
         ok = True
     finally:
         commit_or_rollback(conn, ok)

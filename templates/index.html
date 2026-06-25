@@ -9,7 +9,7 @@
   <title>Spiżarnia</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
-  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=11">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}?v=12">
 </head>
 <body data-tab="pantry">
   <div class="phone-shell">
@@ -174,17 +174,26 @@
       document.getElementById('homesPanel').classList.toggle('active-screen', tab === 'homes');
     }
 
+    let stateRequestId = 0;
     async function loadState() {
-      const res = await fetch('/api/state');
-      state = await res.json();
-      if (!activeHomeId && state.homes.length) activeHomeId = state.homes[0].id;
-      if (activeHomeId && !state.homes.some(h => h.id === activeHomeId)) activeHomeId = state.homes[0]?.id || null;
-      renderHomeTabs();
-      renderPantry();
-      renderShopping();
-      renderNotes();
-      renderHomesManage();
-      updateBadges();
+      const requestId = ++stateRequestId;
+      try {
+        const res = await fetch('/api/state', { cache: 'no-store' });
+        if (!res.ok) throw new Error('Nie udało się pobrać danych aplikacji.');
+        const freshState = await res.json();
+        if (requestId !== stateRequestId) return;
+        state = freshState;
+        if (!activeHomeId && state.homes.length) activeHomeId = state.homes[0].id;
+        if (activeHomeId && !state.homes.some(h => h.id === activeHomeId)) activeHomeId = state.homes[0]?.id || null;
+        renderHomeTabs();
+        renderPantry();
+        renderShopping();
+        renderNotes();
+        renderHomesManage();
+        updateBadges();
+      } catch (error) {
+        console.error(error);
+      }
     }
 
     function updateBadges() {
@@ -463,25 +472,50 @@
     async function toggleNote(id) { await fetch(`/api/notes/${id}/toggle`, { method: 'POST' }); await loadState(); }
     async function deleteNote(id) { await fetch(`/api/notes/${id}/delete`, { method: 'POST' }); await loadState(); }
 
-    async function changeQty(homeId, productId, delta, currentQty, homeName, productName) {
-      let addToShopping = false;
-      if (delta < 0 && currentQty === 1) {
-        addToShopping = confirm(`Produkt „${productName}” w domu „${homeName}” będzie miał 0. Dodać do listy zakupów dla tego domu?`);
+    const pendingActions = new Set();
+
+    async function apiPost(url, body = null) {
+      const options = { method: 'POST', headers: {} };
+      if (body !== null) {
+        options.headers['Content-Type'] = 'application/json';
+        options.body = JSON.stringify(body);
       }
-      await fetch('/api/inventory/change', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ home_id: homeId, product_id: productId, delta, add_to_shopping: addToShopping })
-      });
-      await loadState();
+      const res = await fetch(url, options);
+      let data = null;
+      try { data = await res.json(); } catch (_) {}
+      if (!res.ok || (data && data.ok === false)) {
+        throw new Error((data && data.error) || 'Operacja nie powiodła się.');
+      }
+      return data || { ok: true };
+    }
+
+    async function changeQty(homeId, productId, delta, currentQty, homeName, productName) {
+      const actionKey = `qty:${homeId}:${productId}`;
+      if (pendingActions.has(actionKey)) return;
+      pendingActions.add(actionKey);
+      try {
+        let addToShopping = false;
+        if (delta < 0 && currentQty === 1) {
+          addToShopping = confirm(`Produkt „${productName}” w domu „${homeName}” będzie miał 0. Dodać do listy zakupów dla tego domu?`);
+        }
+        await apiPost('/api/inventory/change', { home_id: homeId, product_id: productId, delta, add_to_shopping: addToShopping });
+        await loadState();
+        if (addToShopping) setTab('shopping');
+      } catch (error) {
+        alert(error.message || 'Nie udało się zmienić ilości.');
+      } finally {
+        pendingActions.delete(actionKey);
+      }
     }
 
     async function addShopping(homeId, productId) {
-      await fetch('/api/shopping/add', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ home_id: homeId, product_id: productId })
-      });
-      await loadState();
-      setTab('shopping');
+      try {
+        await apiPost('/api/shopping/add', { home_id: homeId, product_id: productId });
+        await loadState();
+        setTab('shopping');
+      } catch (error) {
+        alert(error.message || 'Nie udało się dodać do zakupów.');
+      }
     }
 
     async function deleteProduct(productId, name) {
@@ -497,12 +531,37 @@
     }
 
     async function changeShopping(id, delta) {
-      await fetch(`/api/shopping/${id}/change`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delta }) });
-      await loadState();
+      try {
+        await apiPost(`/api/shopping/${id}/change`, { delta });
+        await loadState();
+      } catch (error) {
+        alert(error.message || 'Nie udało się zmienić pozycji na liście zakupów.');
+      }
     }
-    async function toggleShopping(id) { await fetch(`/api/shopping/${id}/toggle`, { method: 'POST' }); await loadState(); }
-    async function deleteShopping(id) { await fetch(`/api/shopping/${id}/delete`, { method: 'POST' }); await loadState(); }
-    async function clearChecked() { await fetch('/api/shopping/clear_checked', { method: 'POST' }); await loadState(); }
+    async function toggleShopping(id) {
+      try {
+        await apiPost(`/api/shopping/${id}/toggle`);
+        await loadState();
+      } catch (error) {
+        alert(error.message || 'Nie udało się odhaczyć pozycji.');
+      }
+    }
+    async function deleteShopping(id) {
+      try {
+        await apiPost(`/api/shopping/${id}/delete`);
+        await loadState();
+      } catch (error) {
+        alert(error.message || 'Nie udało się usunąć pozycji.');
+      }
+    }
+    async function clearChecked() {
+      try {
+        await apiPost('/api/shopping/clear_checked');
+        await loadState();
+      } catch (error) {
+        alert(error.message || 'Nie udało się usunąć kupionych pozycji.');
+      }
+    }
 
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => navigator.serviceWorker.register('/service-worker.js').catch(() => {}));
